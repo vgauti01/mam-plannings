@@ -1,0 +1,165 @@
+.table-container {
+  overflow-x: auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
+  /* Custom Scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: #ccc #f1f1f1;
+
+  max-height: calc(
+    100vh - 200px
+  ); /* Ajuste 200px selon la taille de ton header */
+  overflow-y: auto; /* Active le scroll vertical */
+  position: relative; /* Nécessaire pour le sticky */
+}
+
+.monthly-grid {
+  width: 100%;
+  border-collapse: separate; /* Nécessaire pour sticky */
+  border-spacing: 0;
+  min-width: 800px;
+}
+
+/* --- Headers --- */
+.monthly-grid th {
+  background: #f8f9fa;
+  padding: 16px;
+  text-align: center;
+  font-weight: 600;
+  color: #495057;
+  border-bottom: 2px solid #dee2e6;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* --- Date Column (Sticky Left) --- */
+.sticky-col {
+  position: sticky;
+  left: 0;
+  background: white;
+  z-index: 5;
+  border-right: 2px solid #f1f3f5;
+}
+.monthly-grid th.sticky-col {
+  z-index: 11; /* Coin haut gauche au dessus de tout */
+}
+
+.date-cell {
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.date-cell:hover {
+  background: #f8f9fa;
+}
+
+.date-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.day-name {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #868e96;
+}
+.day-num {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #212529;
+}
+
+/* --- Cells --- */
+.shift-cell {
+  padding: 8px;
+  text-align: center;
+  border-bottom: 1px solid #f1f3f5;
+  border-right: 1px solid #f8f9fa;
+  height: 50px; /* Hauteur min constante */
+  vertical-align: middle;
+  transition: all 0.2s ease;
+}
+
+/* Cellule remplie (avec horaire) */
+.shift-cell.filled {
+  cursor: grab; /* Main ouverte */
+}
+.shift-cell.filled:active {
+  cursor: grabbing; /* Main fermée */
+}
+.shift-cell.filled:hover {
+  background-color: #f8f9fa;
+}
+
+/* Cellule vide */
+.shift-cell.empty {
+  background-color: #fff;
+}
+
+/* --- Drag & Drop States --- */
+
+/* La cellule qu'on est en train de déplacer (source) */
+.shift-cell.dragging {
+  opacity: 0.4;
+  background: #e9ecef;
+  border: 2px dashed #adb5bd;
+}
+
+/* La cellule cible valide (destination) */
+.shift-cell.drag-over {
+  background-color: #e3f2fd !important; /* Bleu clair */
+  border: 2px dashed #2196f3;
+  transform: scale(0.98);
+}
+
+/* --- Contenu des cellules --- */
+.shift-pill {
+  background: #e6fcf5;
+  color: #0ca678;
+  border: 1px solid #c3fae8;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: inline-block;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  pointer-events: none; /* Important: laisse l'event drag au TD parent */
+}
+
+.ghost-pill {
+  font-size: 0.8rem;
+  color: #2196f3;
+  font-weight: bold;
+  pointer-events: none;
+}
+
+/* --- Footer --- */
+.monthly-grid tfoot td {
+  background: #f1f3f5;
+  font-weight: bold;
+  padding: 15px;
+  text-align: center;
+  color: #495057;
+  border-top: 2px solid #dee2e6;
+
+  position: sticky;
+  bottom: 0;
+  z-index: 20; /* Au-dessus du contenu normal (qui est z-index 0) */
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.monthly-grid tfoot td.sticky-col {
+  z-index: 30; /* Doit être supérieur au z-index du footer (20) et de la colonne date (10) */
+  left: 0;
+  bottom: 0;
+  background: #e9ecef; /* Un poil plus foncé pour distinguer */
+  border-right: 2px solid #dee2e6;
+}
+
+.total-cell {
+  font-variant-numeric: tabular-nums;
+}

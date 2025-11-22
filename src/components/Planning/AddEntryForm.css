@@ -1,0 +1,41 @@
+.controls-section {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.controls-section h3 {
+  margin: 0;
+}
+
+.add-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.add-form input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.time-inputs {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.add-form .btn-secondary {
+  padding: 8px;
+  display: flex;
+  align-items: center;
+}
