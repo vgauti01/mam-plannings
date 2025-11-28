@@ -87,6 +87,11 @@
 /* Cellule remplie (avec horaire) */
 .shift-cell.filled {
   cursor: grab; /* Main ouverte */
+
+  user-select: none;          /* Standard */
+  -webkit-user-select: none;  /* Safari/Chrome/WebView */
+  -ms-user-select: none;      /* IE/Edge/Windows */
+  touch-action: none;         /* Empêche le scroll tactile pendant le drag */
 }
 .shift-cell.filled:active {
   cursor: grabbing; /* Main fermée */
