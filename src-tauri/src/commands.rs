@@ -1,9 +1,103 @@
 use std::collections::HashSet;
-use crate::models::{AssistantProfile, Child, Day, TimeRange};
+use tauri::Manager;
+use crate::models::{AssistantProfile, Child, Day, MonthSettings, TimeRange};
 use crate::state::AppState;
 use crate::algorithm::compute_assistant_shifts;
 use crate::parsing::parse_planning;
 use crate::utils::to_minutes_from_midnight;
+
+// --- GESTION MOIS ---
+
+/// Extrait la clé du mois à partir d'une date au format "YYYY-MM-DD"
+/// # Arguments
+/// * `date_str` - Date au format "YYYY-MM-DD"
+/// # Returns
+/// * `String` - Clé du mois au format "YYYY-MM"
+pub(crate) fn get_month_key(date_str: &str) -> String {
+    // date_str est "YYYY-MM-DD", on prend les 7 premiers chars
+    if date_str.len() >= 7 {
+        date_str[0..7].to_string()
+    } else {
+        "default".to_string()
+    }
+}
+
+/// Retourne la configuration pour un mois donné
+/// # Arguments
+/// * `year` - Année (ex: 2025)
+/// * `month` - Mois (1-12)
+/// # Returns
+/// * `MonthSettings` - Paramètres du mois (ratio, équipe active)
+#[tauri::command]
+pub fn get_month_config(
+    state: tauri::State<AppState>,
+    year: i32,
+    month: u32
+) -> MonthSettings {
+    let data = state.data.lock().unwrap();
+    let key = format!("{}-{:02}", year, month);
+
+    // Si la config existe, on la renvoie
+    if let Some(config) = data.month_configs.get(&key) {
+        config.clone()
+    } else {
+        // Sinon, on renvoie une config par défaut (Ratio 4 + toute la librairie)
+        // C'est ici qu'on fait la "continuité" par défaut
+        MonthSettings {
+            ratio: 5,
+            active_team: data.team_library.clone(),
+        }
+    }
+}
+
+/// Met à jour la configuration pour un mois donné et recalcule le planning
+/// # Arguments
+/// * `year` - Année (ex: 2025)
+/// * `month` - Mois (1-12)
+/// * `ratio` - Nouveau ratio d'enfants par assistant
+/// * `active_team` - Nouvelle équipe active pour ce mois
+/// # Returns
+/// * `Result<Vec<Day>, String>` - Liste mise à jour des jours ou une erreur en cas d'échec
+#[tauri::command]
+pub fn update_month_config(
+    state: tauri::State<AppState>,
+    year: i32,
+    month: u32,
+    ratio: u8,
+    active_team: Vec<AssistantProfile>
+) -> Result<Vec<Day>, String> {
+    let mut data = state.data.lock().unwrap();
+    let key = format!("{}-{:02}", year, month);
+
+    // 1. Sauvegarder la nouvelle config
+    let new_settings = MonthSettings {
+        ratio,
+        active_team: active_team.clone(),
+    };
+    data.month_configs.insert(key.clone(), new_settings);
+
+    // Mettre à jour la librairie globale si on a des nouveaux (optionnel, mais pratique)
+    for am in &active_team {
+        if !data.team_library.iter().any(|t| t.id == am.id) {
+            data.team_library.push(am.clone());
+        }
+    }
+
+    // 2. RECALCULER TOUT LE MOIS
+    // On parcourt tous les jours qui correspondent à ce mois
+    for day in data.days.iter_mut() {
+        if get_month_key(&day.date) == key {
+            // Appel à l'algo avec le NOUVEAU RATIO
+            let new_shifts = compute_assistant_shifts(&day.enfants, ratio, &active_team);
+            day.am = new_shifts;
+        }
+    }
+
+    drop(data);
+    state.save().map_err(|e| e.to_string())?;
+
+    Ok(state.data.lock().unwrap().days.clone())
+}
 
 // --- GESTION PLANNING ---
 
@@ -34,6 +128,15 @@ pub fn add_manual_entry(
     // 1. Accéder aux données de l'application
     let mut app_data = state.data.lock().unwrap();
 
+    // Récupérer la clé du mois
+    let month_key = get_month_key(&date);
+    // S'assurer que la config du mois existe
+    let ratio = app_data.month_configs.get(&month_key).map(|c| c.ratio).unwrap_or(4);
+    let active_team = app_data.month_configs
+        .get(&month_key)
+        .map(|c| c.active_team.clone())
+        .unwrap_or(app_data.team_library.clone());
+
     // 2. Trouver ou créer le jour correspondant à la date donnée
     let day_idx = if let Some(idx) = app_data.days.iter().position(|d| d.date == date) {
         idx
@@ -63,7 +166,7 @@ pub fn add_manual_entry(
     }
 
     // 5. Recalculer les AMs pour ce jour
-    recalculate_preserving_assignments(day);
+    recalculate_preserving_assignments(day, &active_team, ratio);
 
     // 6. Sauvegarder les données
     drop(app_data); // On libère le mutex avant l'I/O
@@ -88,6 +191,15 @@ pub fn remove_child(
     // 1. Accéder aux données de l'application
     let mut app_data = state.data.lock().unwrap();
 
+    // Récupérer la clé du mois
+    let month_key = get_month_key(&date);
+    // Récupérer le ratio pour ce mois
+    let ratio = app_data.month_configs.get(&month_key).map(|c| c.ratio).unwrap_or(4);
+    let active_team = app_data.month_configs
+        .get(&month_key)
+        .map(|c| c.active_team.clone())
+        .unwrap_or(app_data.team_library.clone());
+
     // 2. Trouver le jour correspondant à la date donnée
     if let Some(day) = app_data.days.iter_mut().find(|d| d.date == date) {
 
@@ -97,7 +209,7 @@ pub fn remove_child(
 
         // 4. Recalculer les AMs si un enfant a été supprimé
         if day.enfants.len() < len_before {
-            recalculate_preserving_assignments(day);
+            recalculate_preserving_assignments(day, &active_team, ratio);
         }
     }
 
@@ -112,12 +224,12 @@ pub fn remove_child(
 /// Recalcule les shifts mais essaye de garder les IDs des AMs aux mêmes positions
 /// # Arguments
 /// * `day` - Jour à recalculer
-fn recalculate_preserving_assignments(day: &mut Day) {
+fn recalculate_preserving_assignments(day: &mut Day, active_team: &Vec<AssistantProfile>, ratio: u8) {
     // 1. On sauvegarde l'ordre actuel des AMs (ex: [1, 0] si on a échangé)
-    let old_assignments: Vec<usize> = day.am.iter().map(|s| s.am_id).collect();
+    let old_assignments: Vec<u8> = day.am.iter().map(|s| s.am_id).collect();
 
     // 2. On lance le calcul pur (qui va remettre des IDs 0, 1, 2...)
-    let mut new_shifts = compute_assistant_shifts(&day.enfants, 4);
+    let mut new_shifts = compute_assistant_shifts(&day.enfants, ratio, active_team);
 
     // 3. On prépare un set pour éviter les doublons d'ID
     let mut used_ids = HashSet::new();
@@ -172,97 +284,111 @@ pub fn remove_day(
 /// # Returns
 /// * `Result<Vec<Day>, String>` - Liste mise à jour des jours ou une erreur en cas d'échec
 #[tauri::command]
-pub async fn import_planning_pdf(path: String, year: i32, state: tauri::State<'_, AppState>) -> Result<Vec<Day>, String> {
-    // Cloner le path pour le déplacer dans le contexte bloquant
-    let path_clone = path.clone();
-    // Parser le planning dans un contexte bloquant
-    let parsed = tauri::async_runtime::spawn_blocking(move || {
-        parse_planning(&path_clone, year).map_err(|e| e.to_string())
-    }).await;
-    // Cloner dans un contexte async pour éviter les captures 'static
+pub async fn import_planning_pdf(
+    app: tauri::AppHandle, // <--- 1. On demande le AppHandle au lieu du State ici
+    path: String,
+    year: i32
+) -> Result<Vec<Day>, String> { // Note: plus besoin de passer 'state' en argument
 
-    // Gérer les erreurs de parsing
-    let new_days = match parsed {
-        Ok(Ok(days)) => days,
-        Ok(Err(e)) => return Err(e),
-        Err(_) => return Err("Le processus d'importation a été interrompu ou a planté.".to_string()),
+    // 2. On récupère une copie des configs AVANT de partir dans le thread
+    // On a besoin d'accéder au state juste un instant pour lire la config
+    let month_configs_snapshot = {
+        let state = app.state::<AppState>();
+        let data = state.data.lock().unwrap();
+        data.month_configs.clone()
     };
 
-    // Merging des jours importés avec les jours existants
-    {
+    let path_clone = path.clone();
+    // 3. On clone l'app handle pour pouvoir l'envoyer dans le thread
+    let app_clone = app.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+
+        // A. On fait le travail lourd (Parsing) avec la config copiée
+        let new_days = parse_planning(&path_clone, year, &month_configs_snapshot)
+            .map_err(|e| e.to_string())?;
+
+        // B. MAINTENANT, on récupère l'état À L'INTÉRIEUR du thread grâce au AppHandle
+        // C'est la méthode sûre : on redemande l'accès au moment où on en a besoin
+        let state = app_clone.state::<AppState>();
         let mut app_data = state.data.lock().unwrap();
 
-        // Pour chaque jour importé
+        // C. Logique de fusion (Merge)
         for new_day in new_days {
-            // Si le jour existe déjà, on met à jour les enfants et on recalcule
+            let month_key = get_month_key(&new_day.date);
+            let ratio = app_data.month_configs.get(&month_key).map(|c| c.ratio).unwrap_or(4);
+            let active_team = app_data.month_configs
+                .get(&month_key)
+                .map(|c| c.active_team.clone())
+                .unwrap_or(app_data.team_library.clone());
+
+
             if let Some(existing_day) = app_data.days.iter_mut().find(|d| d.date == new_day.date) {
                 existing_day.enfants = new_day.enfants;
-                recalculate_preserving_assignments(existing_day);
+                recalculate_preserving_assignments(existing_day, &active_team, ratio);
             } else {
-                // Sinon, on ajoute le nouveau jour tel quel
-                app_data.days.push(new_day);
+                let mut day_to_add = new_day;
+                day_to_add.am = compute_assistant_shifts(&day_to_add.enfants, ratio, &active_team);
+                app_data.days.push(day_to_add);
             }
+
         }
 
         app_data.days.sort_by(|a, b| a.date.cmp(&b.date));
-        // mutex guard dropped here
-    }
 
-    // Persist (call save). If this is blocking and you must avoid blocking the async runtime,
-    // wrap the save in spawn_blocking similarly — but avoid moving non-'static references into it.
-    state.save().map_err(|e| e.to_string())?;
+        // D. Préparation du retour
+        // On clone les données MAINTENANT, car on a déjà l'accès via app_data
+        let final_days = app_data.days.clone();
 
-    Ok(state.data.lock().unwrap().days.clone())
+        // E. CRUCIAL : On lâche le verrou AVANT de sauvegarder
+        drop(app_data);
+
+        // F. Sauvegarde (qui va reprendre un verrou brièvement en interne)
+        state.save().map_err(|e| e.to_string())?;
+
+        // G. Retour
+        Ok::<Vec<Day>, String>(final_days)
+    }).await;
+
+    result.unwrap_or_else(|_| Err("Le processus d'importation a échoué.".to_string()))
 }
 
-// --- GESTION ÉQUIPE ---
+// --- GESTION DE L'ANNUAIRE (LIBRARY) ---
 
-/// Retourne la liste des assistants maternels
-/// # Returns
-/// * `Vec<AssistantProfile>` - Liste des profils des assistants maternels
+// Récupérer tout l'annuaire (pour l'afficher dans la modale de sélection)
 #[tauri::command]
-pub fn get_team(state: tauri::State<AppState>) -> Vec<AssistantProfile> {
-    // Retourne la liste des assistants maternels
-    state.data.lock().unwrap().team.clone()
+pub fn get_team_library(state: tauri::State<AppState>) -> Vec<AssistantProfile> {
+    state.data.lock().unwrap().team_library.clone()
 }
 
-/// Ajoute un nouvel assistant maternel à l'équipe
-/// # Arguments
-/// * `name` - Nom de l'assistant maternel
-/// * `color` - Couleur associée à l'assistant maternel
-/// # Returns
-/// * `Result<Vec<AssistantProfile>, String>` - Liste mise à jour des profils ou une erreur en cas d'échec
+// Ajouter un AM dans l'annuaire global
 #[tauri::command]
-pub fn add_assistant(state: tauri::State<AppState>, name: String, color: String) -> Result<Vec<AssistantProfile>, String> {
-    // Accéder aux données de l'application
+pub fn add_assistant(
+    state: tauri::State<AppState>,
+    name: String,
+    color: String
+) -> Result<Vec<AssistantProfile>, String> {
     let mut data = state.data.lock().unwrap();
 
-    // Générer un nouvel ID unique
-    let new_id = data.team.iter()
+    // Calcul d'ID robuste (basé sur le max de la librairie)
+    let new_id = data.team_library.iter()
         .map(|am| am.id)
         .max()
-        .unwrap_or(0)
-        + 1;
+        .unwrap_or(0) + 1;
 
-    // Si c'est le premier AM, on lui donne l'ID 0 pour simplifier
-    let final_id = if data.team.is_empty() { 0 } else { new_id };
+    let final_id = if data.team_library.is_empty() { 0 } else { new_id };
 
-    // Ajouter le nouvel assistant maternel
-    data.team.push(AssistantProfile { id: final_id, name, color });
+    let new_am = AssistantProfile { id: final_id, name, color };
+    data.team_library.push(new_am);
 
-    // Sauvegarder les données
     drop(data);
     state.save().map_err(|e| e.to_string())?;
-    Ok(state.data.lock().unwrap().team.clone())
+
+    // On retourne la librairie à jour
+    Ok(state.data.lock().unwrap().team_library.clone())
 }
 
-/// Met à jour les informations d'un assistant maternel existant
-/// # Arguments
-/// * `id` - Identifiant de l'assistant maternel à mettre à jour
-/// * `name` - Nouveau nom de l'assistant maternel
-/// * `color` - Nouvelle couleur associée à l'assistant maternel
-/// # Returns
-/// * `Result<Vec<AssistantProfile>, String>` - Liste mise à jour des profils ou une erreur en cas d'échec
+// Modifier un AM (Nom/Couleur)
 #[tauri::command]
 pub fn update_assistant(
     state: tauri::State<AppState>,
@@ -270,35 +396,39 @@ pub fn update_assistant(
     name: String,
     color: String
 ) -> Result<Vec<AssistantProfile>, String> {
-    // Accéder aux données de l'application
     let mut data = state.data.lock().unwrap();
 
-    // Trouver et mettre à jour l'assistant maternel
-    if let Some(am) = data.team.iter_mut().find(|am| am.id == id) {
-        am.name = name;
-        am.color = color;
+    // 1. Mise à jour dans l'annuaire
+    if let Some(am) = data.team_library.iter_mut().find(|am| am.id == id) {
+        am.name = name.clone();
+        am.color = color.clone();
     }
 
-    // Sauvegarder les données
+    // 2. (Optionnel mais conseillé) Mise à jour dans les configs de mois existantes
+    // Pour que le changement de couleur se répercute partout immédiatement
+    for settings in data.month_configs.values_mut() {
+        if let Some(am) = settings.active_team.iter_mut().find(|a| a.id == id) {
+            am.name = name.clone();
+            am.color = color.clone();
+        }
+    }
+
     drop(data);
     state.save().map_err(|e| e.to_string())?;
-    Ok(state.data.lock().unwrap().team.clone())
+    Ok(state.data.lock().unwrap().team_library.clone())
 }
 
-/// Supprime un assistant maternel de l'équipe
-/// # Arguments
-/// * `id` - Identifiant de l'assistant maternel à supprimer
-/// # Returns
-/// * `Result<Vec<AssistantProfile>, String>` - Liste mise à jour des profils ou une erreur en cas d'échec
+// Supprimer (Archiver) un AM de l'annuaire
 #[tauri::command]
 pub fn remove_assistant(state: tauri::State<AppState>, id: usize) -> Result<Vec<AssistantProfile>, String> {
     let mut data = state.data.lock().unwrap();
 
-    data.team.retain(|am| am.id != id);
+    // On le retire seulement de la librairie (les vieux plannings garderont la trace via month_configs)
+    data.team_library.retain(|am| am.id != id);
 
     drop(data);
     state.save().map_err(|e| e.to_string())?;
-    Ok(state.data.lock().unwrap().team.clone())
+    Ok(state.data.lock().unwrap().team_library.clone())
 }
 
 // --- LOGIQUE D'ÉCHANGE ---
@@ -314,8 +444,8 @@ pub fn remove_assistant(state: tauri::State<AppState>, id: usize) -> Result<Vec<
 pub fn swap_shifts(
     state: tauri::State<AppState>,
     date: String,
-    am_id_1: usize,
-    am_id_2: usize
+    am_id_1: u8,
+    am_id_2: u8
 ) -> Result<Vec<Day>, String> {
     // Accéder aux données de l'application
     let mut data = state.data.lock().unwrap();

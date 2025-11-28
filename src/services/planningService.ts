@@ -1,6 +1,6 @@
 // src/services/planningService.ts
 import { invoke } from "@tauri-apps/api/core";
-import { AssistantProfile, Day } from "../types";
+import {AssistantProfile, Day, MonthSettings} from "../types";
 
 /**
  * Service qui permet de faire le lien entre le frontend et le backend pour la gestion du planning.
@@ -46,20 +46,20 @@ export const planningService = {
     });
   },
 
-  // --- GESTION ÉQUIPE ---
-
-  async getTeam(): Promise<AssistantProfile[]> {
-    return await invoke("get_team");
+  // --- GESTION ANNUAIRE GLOBAL ---
+  async getTeamLibrary(): Promise<AssistantProfile[]> {
+    return await invoke("get_team_library");
   },
 
+  // Note: add/update/remove_assistant agissent maintenant sur la LIBRAIRIE
   async addAssistant(name: string, color: string): Promise<AssistantProfile[]> {
     return await invoke("add_assistant", { name, color });
   },
 
   async updateAssistant(
-    id: number,
-    name: string,
-    color: string
+      id: number,
+      name: string,
+      color: string
   ): Promise<AssistantProfile[]> {
     return await invoke("update_assistant", { id, name, color });
   },
@@ -67,4 +67,23 @@ export const planningService = {
   async removeAssistant(id: number): Promise<AssistantProfile[]> {
     return await invoke("remove_assistant", { id });
   },
+
+  // --- GESTION CONFIG MOIS ---
+  async getMonthConfig(year: number, month: number): Promise<MonthSettings> {
+    return await invoke("get_month_config", { year, month });
+  },
+
+  async updateMonthConfig(
+      year: number,
+      month: number,
+      ratio: number,
+      activeTeam: AssistantProfile[]
+  ): Promise<Day[]> {
+    return await invoke("update_month_config", {
+      year,
+      month,
+      ratio,
+      activeTeam
+    });
+  }
 };

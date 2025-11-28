@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::error::Error;
 use regex::Regex;
-use crate::models::{Child, Day, TimeRange};
+use crate::models::{AssistantProfile, Child, Day, MonthSettings, TimeRange};
 use crate::utils::to_minutes_from_midnight;
 use crate::algorithm::compute_assistant_shifts;
+use crate::commands::get_month_key;
 
 /// Parse un fichier PDF de planning et retourne une liste de jours avec les enfants et leurs horaires.
 /// # Arguments
@@ -11,7 +12,7 @@ use crate::algorithm::compute_assistant_shifts;
 /// * `year` - Année à utiliser pour les dates.
 /// # Returns
 /// * `Result<Vec<Day>, Box<dyn Error>>` - Liste des jours ou une erreur en cas d'échec.
-pub fn parse_planning(path: &str, year: i32) -> Result<Vec<Day>, Box<dyn Error>> {
+pub fn parse_planning(path: &str, year: i32, month_configs: &HashMap<String, MonthSettings>) -> Result<Vec<Day>, Box<dyn Error>> {
     // Lire le fichier PDF
     let bytes = std::fs::read(path)?;
     // Extraire le texte du PDF
@@ -40,7 +41,16 @@ pub fn parse_planning(path: &str, year: i32) -> Result<Vec<Day>, Box<dyn Error>>
             if let (Some(d_num), Some(month), Some(ref abbr)) = (current_day_num, current_month, &current_day_abbr) {
                 let date = format!("{}-{:02}-{:02}", year, month, d_num);
                 let jour = map_day_name(abbr);
-                if let Some(day) = process_day(&date, &jour, &current_lines)? {
+
+                let key = get_month_key(&date);
+                // On cherche le ratio spécifique, sinon 4 par défaut
+                let ratio = month_configs.get(&key).map(|c| c.ratio).unwrap_or(4);
+                let active_team = month_configs
+                    .get(&key)
+                    .map(|c| c.active_team.clone())
+                    .unwrap_or_default();
+
+                if let Some(day) = process_day(&date, &jour, &current_lines, ratio, &active_team)? {
                     days.push(day);
                 }
             }
@@ -60,11 +70,20 @@ pub fn parse_planning(path: &str, year: i32) -> Result<Vec<Day>, Box<dyn Error>>
     if let (Some(d_num), Some(month), Some(ref abbr)) = (current_day_num, current_month, &current_day_abbr) {
         let date = format!("{}-{:02}-{:02}", year, month, d_num);
         let jour = map_day_name(abbr);
-        if let Some(day) = process_day(&date, &jour, &current_lines)? {
+
+        let key = get_month_key(&date);
+        // On cherche le ratio spécifique, sinon 4 par défaut
+        let ratio = month_configs.get(&key).map(|c| c.ratio).unwrap_or(4);
+        let active_team = month_configs
+            .get(&key)
+            .map(|c| c.active_team.clone())
+            .unwrap_or_default();
+
+        if let Some(day) = process_day(&date, &jour, &current_lines, ratio, &active_team)? {
             days.push(day);
         }
     }
-
+    
     Ok(days)
 }
 
@@ -92,7 +111,7 @@ fn map_day_name(abbr: &str) -> String {
 /// * `lines` - Lignes associées au jour.
 /// # Returns
 /// * `Result<Option<Day>, Box<dyn Error>>` - Jour traité ou None s'il n'y a pas d'enfants ou une erreur en cas d'échec.
-fn process_day(date: &str, jour: &str, lines: &[String]) -> Result<Option<Day>, Box<dyn Error>> {
+fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team: &Vec<AssistantProfile>) -> Result<Option<Day>, Box<dyn Error>> {
     // Lignes du style "7h30 - 18h30 (11h)" -> à ignorer
     let global_hours_re =
         Regex::new(r"^\s*\d{1,2}h\d{2}\s*-\s*\d{1,2}h\d{2}.*$")?;
@@ -152,7 +171,7 @@ fn process_day(date: &str, jour: &str, lines: &[String]) -> Result<Option<Day>, 
     enfants.sort_by(|a, b| a.nom.cmp(&b.nom));
 
     // Calcul des AM ici via l'algo
-    let am_shifts = compute_assistant_shifts(&enfants, 4);
+    let am_shifts = compute_assistant_shifts(&enfants, ratio, active_team);
 
     // Retourner le jour construit
     Ok(Some(Day {

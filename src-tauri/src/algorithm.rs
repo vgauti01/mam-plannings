@@ -1,21 +1,25 @@
-use crate::models::{AssistantShift, Child};
+use crate::models::{AssistantProfile, AssistantShift, Child};
 
 /// Structure interne représentant un segment de temps avec le nombre d'AM nécessaires
 struct Segment {
     start: u16,
     end: u16,
-    am_needed: usize,
+    am_needed: u8,
 }
 
 /// Calcule les shifts des assistants maternels pour une liste d'enfants donnée
 /// # Arguments
 /// * `enfants` - Référence à une tranche d'enfants avec leurs horaires
 /// * `max_am` - Nombre maximum d'assistants maternels disponibles
+/// * `ratio` - Nombre d'enfants par assistant maternel
 /// # Returns
 /// * `Result<Vec<AssistantShift>, Box<dyn Error>>` - Liste des shifts des assistants maternels ou une erreur en cas d'échec
-pub fn compute_assistant_shifts(enfants: &[Child], max_am: usize) -> Vec<AssistantShift> {
+pub fn compute_assistant_shifts(enfants: &[Child], ratio: u8, available_ams: &Vec<AssistantProfile>) -> Vec<AssistantShift> {
+    let available_ids: Vec<usize> = available_ams.iter().map(|am| am.id).collect();
+    let max_am = available_ids.len() as u8;
+
     // Construire les segments de temps
-    let segments = build_segments(enfants, max_am);
+    let segments = build_segments(enfants, max_am, ratio);
     // Si pas de segments, retourner vide
     if segments.is_empty() {
         return Vec::new();
@@ -29,7 +33,7 @@ pub fn compute_assistant_shifts(enfants: &[Child], max_am: usize) -> Vec<Assista
     // avec son ID, ses heures de début et de fin, et son statut actif
     #[derive(Debug)]
     struct AssistState {
-        id: usize,
+        id: u8,
         start: Option<u16>,
         end: Option<u16>,
         active: bool,
@@ -37,9 +41,10 @@ pub fn compute_assistant_shifts(enfants: &[Child], max_am: usize) -> Vec<Assista
     }
 
     // Initialiser les états des assistants maternels
-    let mut ams: Vec<AssistState> = (0..max_am)
-        .map(|i| AssistState {
-            id: i,
+    let mut ams: Vec<AssistState> = available_ids
+        .iter()
+        .map(|&real_id| AssistState {
+            id: real_id as u8,
             start: None,
             end: None,
             active: false,
@@ -50,6 +55,7 @@ pub fn compute_assistant_shifts(enfants: &[Child], max_am: usize) -> Vec<Assista
     // Parcourir les segments pour ajuster les shifts des assistants maternels
     for seg in &segments {
         let needed = seg.am_needed.min(max_am);
+
         let active_indices: Vec<usize> = ams
             .iter()
             .enumerate()
@@ -58,7 +64,7 @@ pub fn compute_assistant_shifts(enfants: &[Child], max_am: usize) -> Vec<Assista
             .collect();
 
         // Nombre d'AM actuellement actifs
-        let active_count = active_indices.len();
+        let active_count = active_indices.len() as u8;
 
         // Ajuster le nombre d'AM actifs selon les besoins du segment
         if needed > active_count {
@@ -106,7 +112,7 @@ pub fn compute_assistant_shifts(enfants: &[Child], max_am: usize) -> Vec<Assista
         .filter_map(|a| {
             if a.ever_used {
                 Some(AssistantShift {
-                    am_id: a.id,
+                    am_id: a.id, // Ici, c'est bien l'ID réel (ex: 5)
                     arrivee: a.start.unwrap(),
                     depart: a.end.unwrap(),
                 })
@@ -124,9 +130,9 @@ pub fn compute_assistant_shifts(enfants: &[Child], max_am: usize) -> Vec<Assista
 /// * `max_am` - Nombre maximum d'assistants maternels disponibles
 /// # Returns
 /// * `Vec<Segment>` - Vecteur des segments de temps avec le nombre d'AM nécessaires
-fn build_segments(enfants: &[Child], max_am: usize) -> Vec<Segment> {
+fn build_segments(enfants: &[Child], max_am: u8, ratio: u8) -> Vec<Segment> {
     // Construire la liste des événements (arrivées et départs)
-    let mut events: Vec<(u16, i32)> = Vec::new();
+    let mut events: Vec<(u16, i8)> = Vec::new();
     // Pour chaque enfant, ajouter ses heures d'arrivée et de départ
     for child in enfants {
         for tr in &child.heures {
@@ -143,7 +149,7 @@ fn build_segments(enfants: &[Child], max_am: usize) -> Vec<Segment> {
 
     // Construire les segments
     let mut segments = Vec::new();
-    let mut enfants_actuels: i32 = 0;
+    let mut enfants_actuels: u8 = 0;
     let mut prev_time: Option<u16> = None;
 
     // Parcourir les événements triés
@@ -152,8 +158,8 @@ fn build_segments(enfants: &[Child], max_am: usize) -> Vec<Segment> {
         if let Some(start) = prev_time {
             // Ajouter un segment si le temps a changé et qu'il y a des enfants présents
             if time > start && enfants_actuels > 0 {
-                // Calculer le nombre d'AM nécessaires (1 AM pour 4 enfants)
-                let needed = ((enfants_actuels + 3) / 4) as usize;
+                // Formule mathématique pour "Ceil(enfants / ratio)"
+                let needed = (enfants_actuels + ratio - 1) / ratio;
                 segments.push(Segment {
                     start,
                     end: time,
@@ -162,7 +168,7 @@ fn build_segments(enfants: &[Child], max_am: usize) -> Vec<Segment> {
             }
         }
         // Mettre à jour le nombre d'enfants actuels et le temps précédent
-        enfants_actuels += delta;
+        enfants_actuels = enfants_actuels.saturating_add_signed(delta);
         prev_time = Some(time);
     }
     // Retourner les segments construits

@@ -33,7 +33,18 @@ export const MonthlyTable = ({
     amId: number;
   } | null>(null);
 
-  const monthDays = days.filter((d) => isSameMonth(d.date, currentMonth));
+  const monthDays = days.filter(d => isSameMonth(d.date, currentMonth));
+
+  // 1. Récupérer les IDs de l'équipe active (Configuration)
+  const configIds = team.map(t => t.id);
+
+  // 2. Récupérer les IDs qui ont réellement des shifts dans les données (Données)
+  const dataIds = new Set<number>();
+  monthDays.forEach(d => d.am.forEach(s => dataIds.add(s.am_id)));
+
+  // 3. Fusionner les deux listes, retirer les doublons et trier
+  const amIds = Array.from(new Set([...configIds, ...Array.from(dataIds)]))
+    .sort((a, b) => a - b);
 
   // Calcul dynamique des colonnes nécessaires
   let maxAmIdInData = 0;
@@ -42,10 +53,6 @@ export const MonthlyTable = ({
       if (s.am_id > maxAmIdInData) maxAmIdInData = s.am_id;
     })
   );
-  const columnCount = Math.max(team.length, maxAmIdInData + 1, 2);
-  const amIds = Array.from({ length: columnCount }, (_, i) => i);
-
-  // --- LOGIQUE D&D CORRIGÉE ---
 
   const handleDragStart = (e: React.DragEvent, date: string, amId: number) => {
     setDraggedData({ date, amId });

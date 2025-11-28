@@ -13,6 +13,17 @@ export interface AssistantProfile {
 }
 
 /**
+ * Type représentant les paramètres mensuels pour le planning.
+ * Inclut un ratio et une équipe active d'assistants maternels.
+ * @property {number} ratio - Ratio utilisé pour le planning.
+ * @property {AssistantProfile[]} active_team - Liste des assistants maternels actifs pour le mois.
+ */
+export interface MonthSettings {
+  ratio: number;
+  active_team: AssistantProfile[];
+}
+
+/**
  * Type représentant une plage horaire avec une heure d'arrivée et de départ.
  * Les heures sont exprimées en minutes depuis minuit.
  *

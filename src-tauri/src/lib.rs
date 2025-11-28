@@ -20,15 +20,23 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             get_planning,
+            
+            // Gestion Quotidienne
             add_manual_entry,
-            import_planning_pdf,
             remove_child,
             remove_day,
-            get_team,
+            import_planning_pdf,
+            swap_shifts,
+
+            // Gestion Annuaire (Library)
+            get_team_library,
             add_assistant,
             update_assistant,
             remove_assistant,
-            swap_shifts
+
+            // Gestion Mois (Settings)
+            get_month_config,
+            update_month_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

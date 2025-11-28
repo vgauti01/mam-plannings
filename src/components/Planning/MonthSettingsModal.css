@@ -1,0 +1,32 @@
+.settings-container { padding: 10px; }
+.setting-label { font-weight: bold; display: block; margin-bottom: 5px; color: #333; }
+.hint { font-size: 0.85rem; color: #888; margin: 0 0 10px 0; }
+.divider { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
+
+.ratio-control input {
+    font-size: 1.2rem; padding: 5px; width: 60px; text-align: center; margin-right: 10px;
+}
+
+.library-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 15px;
+    max-height: 250px; overflow-y: auto;
+}
+
+.am-card {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: #f8f9fa; border: 1px solid #dee2e6;
+    border-radius: 6px; border-left-width: 4px;
+    cursor: pointer; transition: all 0.2s; user-select: none;
+}
+.am-card:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.am-card.selected { background: #e7f5ff; border-color: #74c0fc; color: #1864ab; }
+
+.checkbox-visual {
+    width: 18px; height: 18px; border: 1px solid #adb5bd; border-radius: 4px; background: white;
+    display: flex; align-items: center; justify-content: center; font-size: 0.8rem; color: #228be6;
+}
+.am-card.selected .checkbox-visual { border-color: #228be6; }
+
+.quick-add-row { display: flex; gap: 8px; }
+.quick-add-row input { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }

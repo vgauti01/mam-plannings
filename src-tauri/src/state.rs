@@ -29,9 +29,9 @@ impl AppState {
 
         let data = if file_path.exists() { // Charge les données depuis le fichier s'il existe
             let content = fs::read_to_string(&file_path).unwrap_or_default();
-            serde_json::from_str(&content).unwrap_or(AppData { days: Vec::new(), team: Vec::new() })
+            serde_json::from_str(&content).unwrap_or(AppData { days: Vec::new(), team_library: Vec::new(), month_configs: std::collections::HashMap::new() })
         } else { // Initialise avec des données vides sinon
-            AppData { days: Vec::new(), team: Vec::new() }
+            AppData { days: Vec::new(), team_library: Vec::new(), month_configs: std::collections::HashMap::new() }
         };
 
         // Retourne l'état initialisé

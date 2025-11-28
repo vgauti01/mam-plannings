@@ -1,6 +1,6 @@
 // src/hooks/usePlanning.ts
-import { useState, useEffect, useCallback } from "react";
-import { AssistantProfile } from "../types";
+import {useState, useEffect, useCallback} from "react";
+import {AssistantProfile} from "../types";
 import { planningService } from "../services/planningService";
 
 /**
@@ -37,7 +37,7 @@ export const useTeam = (): UseTeamReturn => {
    */
   const loadTeam = useCallback(async () => {
     try {
-      const t = await planningService.getTeam();
+      const t = await planningService.getTeamLibrary();
       setTeam(t);
     } catch (err) {
       console.error(err);

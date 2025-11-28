@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Structure principale contenant les données de l'application
@@ -5,18 +6,32 @@ use serde::{Deserialize, Serialize};
 /// Utilisée pour stocker et gérer les informations relatives au planning et aux assistants maternels
 /// dans l'application
 /// - days: Liste des jours avec les détails des enfants et des assistants maternels
-/// - team: Liste des profils des assistants maternels
+/// - team_library: Répertoire global des assistants maternels pour suggérer des noms
+/// - month_configs: Paramètres spécifiques par mois, incluant le ratio d'enfants par assistant et l'équipe active
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppData {
     pub days: Vec<Day>,
+    // Le répertoire global (pour suggérer des noms)
     #[serde(default)]
-    pub team: Vec<AssistantProfile>
+    pub team_library: Vec<AssistantProfile>,
+    // Les réglages spécifiques par mois (Clé = "YYYY-MM")
+    #[serde(default)]
+    pub month_configs: HashMap<String, MonthSettings>,
+}
+
+/// Paramètres spécifiques pour un mois donné
+/// Inclut le ratio d'enfants par assistant et l'équipe active pour ce mois
+/// Utilisée pour configurer les paramètres mensuels dans l'application
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MonthSettings {
+    pub ratio: u8,               // ex: 5 (par défaut)
+    pub active_team: Vec<AssistantProfile>, // L'équipe active pour CE mois
 }
 
 /// Profil d'un assistant maternel
 /// Contient un identifiant unique, un nom et une couleur associée
 /// Utilisé pour identifier et différencier les assistants maternels dans l'application
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct AssistantProfile {
     pub id: usize,
     pub name: String,
@@ -45,7 +60,7 @@ pub struct Child {
 /// Utilisée pour planifier les shifts des assistants maternels
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AssistantShift {
-    pub am_id: usize,
+    pub am_id: u8,
     pub arrivee: u16,
     pub depart: u16,
 }

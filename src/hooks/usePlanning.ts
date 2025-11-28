@@ -1,6 +1,6 @@
 // src/hooks/usePlanning.ts
-import { useState, useEffect } from "react";
-import { Day } from "../types";
+import {useState, useEffect, useCallback} from "react";
+import {AssistantProfile, Day, MonthSettings} from "../types";
 import { planningService } from "../services/planningService";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -18,6 +18,7 @@ import { open } from "@tauri-apps/plugin-dialog";
  */
 interface UsePlanningReturn {
   days: Day[];
+  currentConfig: MonthSettings | null;
   handleRemoveDay: (date: string) => Promise<void>;
   handleSwap: (date: string, id1: number, id2: number) => Promise<void>;
   handleImportPdf: () => Promise<void>;
@@ -28,6 +29,12 @@ interface UsePlanningReturn {
     end: string
   ) => Promise<void>;
   handleDeleteChild: (date: string, childName: string) => Promise<void>;
+  loadMonthConfig: (date: Date) => Promise<void>;
+  handleSaveMonthConfig: (
+    date: Date,
+    ratio: number,
+    activeTeam: AssistantProfile[]
+  ) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
@@ -40,6 +47,9 @@ interface UsePlanningReturn {
 export const usePlanning = (): UsePlanningReturn => {
   // États locaux
   const [days, setDays] = useState<Day[]>([]);
+  // Config actuelle (Ratio...)
+  const [currentConfig, setCurrentConfig] = useState<MonthSettings | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +74,41 @@ export const usePlanning = (): UsePlanningReturn => {
   useEffect(() => {
     void loadPlanning();
   }, []);
+
+  // --- CHARGER LA CONFIG DU MOIS ---
+  const loadMonthConfig = useCallback(async (date: Date) => {
+    try {
+      const y = date.getFullYear();
+      const m = date.getMonth() + 1; // JS mois 0-11 -> Rust 1-12
+
+      const config = await planningService.getMonthConfig(y, m);
+      console.log(JSON.stringify(config))
+
+      setCurrentConfig(config);
+    } catch (e) {
+      console.error("Erreur chargement config mois:", e);
+    }
+  }, []);
+
+  // --- SAUVEGARDER LA CONFIG ---
+  const handleSaveMonthConfig = async (date: Date, ratio: number, activeTeam: AssistantProfile[]) => {
+    setLoading(true);
+    try {
+      const y = date.getFullYear();
+      const m = date.getMonth() + 1;
+
+      // Le backend renvoie les jours recalculés
+      const updatedDays = await planningService.updateMonthConfig(y, m, ratio, activeTeam);
+
+      setDays(updatedDays);
+      // On recharge la config pour être sûr d'être synchro
+      await loadMonthConfig(date);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /**
    * Gère l'importation d'un fichier PDF.
@@ -195,11 +240,14 @@ export const usePlanning = (): UsePlanningReturn => {
 
   return {
     days,
+    currentConfig,
     handleRemoveDay,
     handleSwap,
     handleImportPdf,
     handleAddEntry,
     handleDeleteChild,
+    loadMonthConfig,
+    handleSaveMonthConfig,
     loading,
     error,
   };
