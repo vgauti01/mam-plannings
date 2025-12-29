@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import ReactDOM from "react-dom/client";
 import MainPage from "./App.tsx";
 import "./styles/index.scss";

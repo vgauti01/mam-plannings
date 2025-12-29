@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import { useState } from "react";
 import { usePlanning } from "./hooks/usePlanning";
 import { MonthlyTable } from "./components/Planning/MonthlyTable";
 import { MonthNavigation } from "./components/MonthNavigation";
@@ -10,15 +10,11 @@ import "./App.css";
 import { TeamManager } from "./components/Team/TeamManager.tsx";
 import { LoadingOverlay } from "./components/ui/LoadingOverlay.tsx";
 import {
-  LuCalendarRange,
-  LuDownload,
-  LuFileInput,
-  LuUsers,
-} from "react-icons/lu";
-import { generateMonthlyPdf } from "./utils/pdfExporter.ts";
+  generateMonthlyPdf,
+  generateMonthlyExcel,
+} from "./utils/pdfExporter.ts";
 import { useTeam } from "./hooks/useTeam.ts";
-import { MonthSettingsModal } from "./components/Planning/MonthSettingsModal";
-import {formatMonthYear} from "./utils/formatters.ts";
+import Header from "./components/Header.tsx";
 
 /**
  * Composant principal de l'application MAM Plannings.
@@ -27,7 +23,6 @@ import {formatMonthYear} from "./utils/formatters.ts";
 function App() {
   const {
     days,
-    currentConfig,
     loading,
     error,
     handleImportPdf,
@@ -35,8 +30,8 @@ function App() {
     handleAddEntry,
     handleRemoveDay,
     handleSwap,
-    loadMonthConfig,
-    handleSaveMonthConfig,
+    handleUpdateShift,
+    handleUpdateRatio,
   } = usePlanning();
 
   const {
@@ -50,16 +45,15 @@ function App() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Day | null>(null);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  useEffect(() => {
-    void loadMonthConfig(currentMonth);
-  }, [currentMonth, loadMonthConfig]);
 
   // Fonction pour gérer l'export PDF
   const handleExportPdf = () => {
-    if (!currentConfig) return;
-    void generateMonthlyPdf(days, currentConfig.active_team, currentMonth);
+    void generateMonthlyPdf(days, team, currentMonth);
+  };
+
+  // Fonction pour gérer l'export Excel
+  const handleExportExcel = () => {
+    void generateMonthlyExcel(days, team, currentMonth);
   };
 
   return (
@@ -71,65 +65,37 @@ function App() {
       />
 
       {/* HEADER */}
-      <header className="app-header">
-        <div className="header-left">
-          <LuCalendarRange size={30} />
-          <h1>MAM Plannings</h1>
-        </div>
-        <div className="header-actions">
-          <button
-            onClick={() => setIsTeamModalOpen(true)}
-            className="btn-secondary"
-          >
-            <LuUsers /> Équipe
-          </button>
-          <button onClick={handleImportPdf} className="btn-primary">
-            <LuFileInput /> Importer PDF
-          </button>
-          <button onClick={handleExportPdf} className="btn-primary">
-            <LuDownload /> Exporter PDF
-          </button>
-        </div>
-      </header>
+      <Header
+        setIsTeamModalOpen={setIsTeamModalOpen}
+        handleImportPdf={handleImportPdf}
+        handleExportPdf={handleExportPdf}
+        handleExportExcel={handleExportExcel}
+      />
 
       {/* BANNIERE D'ERREUR */}
       {error && <div className="error-banner">{error}</div>}
 
       {/* NAVIGATION MOIS ( < Novembre > ) */}
-      <MonthNavigation currentDate={currentMonth} onChange={setCurrentMonth} openSettings={() => setIsSettingsOpen(true)} />
+      <MonthNavigation currentDate={currentMonth} onChange={setCurrentMonth} />
 
       {/* FORMULAIRE AJOUT ENTRÉE */}
       <AddEntryForm onAdd={handleAddEntry} />
 
       {/* TABLEAU MENSUEL */}
-      {currentConfig && <main className="planning-board">
+      <main className="planning-board">
         {loading ? (
           <p className="loading-text">Chargement du planning...</p>
         ) : (
           <MonthlyTable
             days={days}
-            team={currentConfig?.active_team}
+            team={team}
             currentMonth={currentMonth}
             onDayClick={(day) => setSelectedDay(day)}
             onSwap={handleSwap}
+            onShiftChange={handleUpdateShift}
           />
         )}
-      </main>}
-
-      {/* MODALE DE CONFIGURATION DU MOIS */}
-      <Modal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        title={`Configuration : ${formatMonthYear(currentMonth)}`}
-      >
-        {currentConfig && (
-          <MonthSettingsModal
-            currentSettings={currentConfig}
-            onSave={(ratio, team) => handleSaveMonthConfig(currentMonth, ratio, team)}
-            onClose={() => setIsSettingsOpen(false)}
-          />
-        )}
-      </Modal>
+      </main>
 
       {/* MODALE GESTION ÉQUIPE */}
       <Modal
@@ -160,6 +126,9 @@ function App() {
             onDeleteDay={() => {
               void handleRemoveDay(selectedDay.date);
               setSelectedDay(null);
+            }}
+            onUpdateRatio={(ratio) => {
+              void handleUpdateRatio(selectedDay.date, ratio);
             }}
           />
         )}

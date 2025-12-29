@@ -1,6 +1,6 @@
 // src/services/planningService.ts
 import { invoke } from "@tauri-apps/api/core";
-import {AssistantProfile, Day, MonthSettings} from "../types";
+import { AssistantProfile, Day, TimeRange } from "../types";
 
 /**
  * Service qui permet de faire le lien entre le frontend et le backend pour la gestion du planning.
@@ -12,8 +12,18 @@ export const planningService = {
     return await invoke("get_planning");
   },
 
-  async importPdf(path: string, year: number): Promise<Day[]> {
-    return await invoke("import_planning_pdf", { path, year });
+  async importPdf(
+    path: string,
+    year: number,
+    ratio: number,
+    activeTeamIds: number[]
+  ): Promise<Day[]> {
+    return await invoke("import_planning_pdf", {
+      path,
+      year,
+      ratio,
+      activeTeamIds,
+    });
   },
 
   async addManualEntry(
@@ -57,9 +67,9 @@ export const planningService = {
   },
 
   async updateAssistant(
-      id: number,
-      name: string,
-      color: string
+    id: number,
+    name: string,
+    color: string
   ): Promise<AssistantProfile[]> {
     return await invoke("update_assistant", { id, name, color });
   },
@@ -68,22 +78,19 @@ export const planningService = {
     return await invoke("remove_assistant", { id });
   },
 
-  // --- GESTION CONFIG MOIS ---
-  async getMonthConfig(year: number, month: number): Promise<MonthSettings> {
-    return await invoke("get_month_config", { year, month });
+  async updateAssistantShift(
+    date: string,
+    amId: number,
+    newRanges: TimeRange[]
+  ): Promise<Day[]> {
+    return await invoke("edit_assistant_shift", {
+      date,
+      amId,
+      newRanges,
+    });
   },
 
-  async updateMonthConfig(
-      year: number,
-      month: number,
-      ratio: number,
-      activeTeam: AssistantProfile[]
-  ): Promise<Day[]> {
-    return await invoke("update_month_config", {
-      year,
-      month,
-      ratio,
-      activeTeam
-    });
-  }
+  async updateDayRatio(date: string, ratio: number): Promise<Day[]> {
+    return await invoke("update_day_ratio", { date, ratio });
+  },
 };

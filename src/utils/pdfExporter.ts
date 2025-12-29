@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 import { AssistantProfile, Day } from "../types";
 import {
   isSameMonth,
@@ -60,12 +61,12 @@ export const generateMonthlyPdf = async (
 
     // Colonnes AM
     amIds.forEach((amId) => {
-      const shifts = day.am.filter((s) => s.am_id === amId);
-      if (shifts.length > 0) {
-        // On concatène les shifts s'il y en a plusieurs (ex: "08h00-12h00 / 14h00-18h00")
-        const text = shifts
+      const shift = day.am.find((s) => s.am_id === amId);
+      if (shift && shift.heures.length > 0) {
+        // On concatène les plages horaires s'il y en a plusieurs (ex: "08h00-12h00 / 14h00-18h00")
+        const text = shift.heures
           .map(
-            (s) => `${minutesToTime(s.arrivee)} - ${minutesToTime(s.depart)}`
+            (h) => `${minutesToTime(h.arrivee)} - ${minutesToTime(h.depart)}`
           )
           .join("\n");
         rowData.push(text);
@@ -81,9 +82,10 @@ export const generateMonthlyPdf = async (
   const totals = amIds.map((amId) => {
     let totalMinutes = 0;
     monthDays.forEach((day) => {
-      day.am
-        .filter((s) => s.am_id === amId)
-        .forEach((s) => (totalMinutes += s.depart - s.arrivee));
+      const shift = day.am.find((s) => s.am_id === amId);
+      if (shift) {
+        shift.heures.forEach((h) => (totalMinutes += h.depart - h.arrivee));
+      }
     });
     return formatDuration(totalMinutes);
   });
@@ -222,4 +224,119 @@ const isColorLight = (hex: string) => {
   const L = 0.2126 * c_map[0] + 0.7152 * c_map[1] + 0.0722 * c_map[2];
 
   return L > 0.179; // Si > 0.179, la couleur est considérée claire -> texte noir
+};
+
+/**
+ * Génère un fichier Excel (XLSX) du planning mensuel.
+ * Ce format est facilement modifiable par l'utilisateur dans Excel, LibreOffice, etc.
+ *
+ * @param days Liste des jours du planning
+ * @param team Liste des profils des assistants maternels
+ * @param currentMonth Date représentant le mois courant à générer
+ * @return Promise<boolean> true si le fichier a été enregistré avec succès
+ */
+export const generateMonthlyExcel = async (
+  days: Day[],
+  team: AssistantProfile[],
+  currentMonth: Date
+): Promise<boolean> => {
+  // 1. Filtrage des données pour le mois courant
+  const monthDays = days.filter((d) => isSameMonth(d.date, currentMonth));
+
+  // 2. Déterminer les colonnes AM nécessaires
+  let maxAmId = 0;
+  monthDays.forEach((d) =>
+    d.am.forEach((s) => {
+      if (s.am_id > maxAmId) maxAmId = s.am_id;
+    })
+  );
+  const columnCount = Math.max(team.length, maxAmId + 1);
+  const amIds = Array.from({ length: columnCount }, (_, i) => i);
+
+  // 3. Créer les données du tableau
+  const headers = [
+    "Date",
+    ...amIds.map((id) => team.find((t) => t.id === id)?.name || `AM ${id + 1}`),
+  ];
+
+  const dataRows = monthDays.map((day) => {
+    const row: string[] = [formatDayLabel(day.date)];
+
+    amIds.forEach((amId) => {
+      const shift = day.am.find((s) => s.am_id === amId);
+      if (shift && shift.heures.length > 0) {
+        const text = shift.heures
+          .map(
+            (h) => `${minutesToTime(h.arrivee)} - ${minutesToTime(h.depart)}`
+          )
+          .join(" / ");
+        row.push(text);
+      } else {
+        row.push("");
+      }
+    });
+
+    return row;
+  });
+
+  // 4. Calculer les totaux
+  const totals = ["TOTAL"];
+  amIds.forEach((amId) => {
+    let totalMinutes = 0;
+    monthDays.forEach((day) => {
+      const shift = day.am.find((s) => s.am_id === amId);
+      if (shift) {
+        shift.heures.forEach((h) => (totalMinutes += h.depart - h.arrivee));
+      }
+    });
+    totals.push(formatDuration(totalMinutes));
+  });
+
+  // 5. Assembler toutes les lignes
+  const allRows = [headers, ...dataRows, [], totals];
+
+  // 6. Créer le workbook et la worksheet
+  const worksheet = XLSX.utils.aoa_to_sheet(allRows);
+
+  // 7. Définir la largeur des colonnes
+  const colWidths = [{ wch: 15 }]; // Colonne Date
+  amIds.forEach(() => colWidths.push({ wch: 20 })); // Colonnes AM
+  worksheet["!cols"] = colWidths;
+
+  // 8. Créer le workbook
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    formatMonthYear(currentMonth)
+  );
+
+  // 9. Générer le fichier binaire
+  const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+
+  // 10. Sauvegarder avec la boîte de dialogue Tauri
+  const fileName = `Planning_${formatMonthYear(currentMonth).replace(" ", "_")}.xlsx`;
+
+  try {
+    const filePath = await save({
+      defaultPath: fileName,
+      filters: [
+        {
+          name: "Excel",
+          extensions: ["xlsx"],
+        },
+      ],
+    });
+
+    if (filePath) {
+      const binaryData = new Uint8Array(excelBuffer);
+      await writeFile(filePath, binaryData);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error("Erreur lors de l'enregistrement du fichier Excel :", e);
+    alert("Impossible d'enregistrer le fichier.");
+    return false;
+  }
 };

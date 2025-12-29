@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Structure principale contenant les données de l'application
@@ -7,25 +6,12 @@ use serde::{Deserialize, Serialize};
 /// dans l'application
 /// - days: Liste des jours avec les détails des enfants et des assistants maternels
 /// - team_library: Répertoire global des assistants maternels pour suggérer des noms
-/// - month_configs: Paramètres spécifiques par mois, incluant le ratio d'enfants par assistant et l'équipe active
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppData {
     pub days: Vec<Day>,
     // Le répertoire global (pour suggérer des noms)
     #[serde(default)]
     pub team_library: Vec<AssistantProfile>,
-    // Les réglages spécifiques par mois (Clé = "YYYY-MM")
-    #[serde(default)]
-    pub month_configs: HashMap<String, MonthSettings>,
-}
-
-/// Paramètres spécifiques pour un mois donné
-/// Inclut le ratio d'enfants par assistant et l'équipe active pour ce mois
-/// Utilisée pour configurer les paramètres mensuels dans l'application
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MonthSettings {
-    pub ratio: u8,               // ex: 5 (par défaut)
-    pub active_team: Vec<AssistantProfile>, // L'équipe active pour CE mois
 }
 
 /// Profil d'un assistant maternel
@@ -33,7 +19,7 @@ pub struct MonthSettings {
 /// Utilisé pour identifier et différencier les assistants maternels dans l'application
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct AssistantProfile {
-    pub id: usize,
+    pub id: u8,
     pub name: String,
     pub color: String,
 }
@@ -61,8 +47,7 @@ pub struct Child {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AssistantShift {
     pub am_id: u8,
-    pub arrivee: u16,
-    pub depart: u16,
+    pub heures: Vec<TimeRange>,
 }
 
 /// Détails d'un jour spécifique dans le planning
@@ -74,4 +59,5 @@ pub struct Day {
     pub jour: String,
     pub enfants: Vec<Child>,
     pub am: Vec<AssistantShift>,
+    pub ratio: u8,
 }

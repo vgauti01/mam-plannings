@@ -1,117 +1,199 @@
+/* === Team Manager === */
 .team-manager {
-  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
+/* === Liste des membres === */
 .team-list {
   list-style: none;
   padding: 0;
-  margin: 0 0 2rem 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .team-item {
   display: flex;
   align-items: center;
-  padding: 10px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
+  padding: 12px 16px;
+  background: var(--gray-50);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gray-100);
+  transition: all 0.15s;
 }
 
+.team-item:hover {
+  background: white;
+  border-color: var(--gray-200);
+  box-shadow: var(--shadow-sm);
+}
+
+/* === Point de couleur === */
 .color-dot {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  margin-right: 10px;
-  border: 2px solid white;
-  box-shadow: 0 0 0 1px #ddd;
+  margin-right: 14px;
+  border: 3px solid white;
+  box-shadow:
+    0 0 0 1px var(--gray-200),
+    var(--shadow-sm);
+  flex-shrink: 0;
 }
 
 .am-name {
-  font-weight: bold;
+  font-weight: 600;
+  color: var(--gray-800);
   flex-grow: 1;
+  font-size: 0.95rem;
 }
 
-.am-id-badge {
-  font-size: 0.75rem;
-  color: #999;
-  background: #fff;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid #eee;
+/* === Actions === */
+.actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
 }
 
+.team-item:hover .actions {
+  opacity: 1;
+}
+
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--gray-500);
+  transition: all 0.15s;
+}
+
+.btn-icon:hover {
+  background: var(--gray-100);
+  color: var(--gray-700);
+}
+
+.btn-icon.delete:hover {
+  background: #fef2f2;
+  color: var(--danger-500);
+}
+
+.btn-icon.save {
+  color: var(--success-500);
+}
+
+.btn-icon.save:hover {
+  background: #f0fdf4;
+}
+
+.btn-icon.cancel:hover {
+  background: var(--gray-100);
+}
+
+/* === Mode édition === */
+.edit-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.edit-row input[type="text"] {
+  flex-grow: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--primary-300);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  background: white;
+}
+
+.edit-row input[type="text"]:focus {
+  outline: none;
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+/* === Input couleur === */
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: none;
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: 2px solid white;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--gray-200);
+}
+
+/* === Formulaire d'ajout === */
 .add-am-form {
-  background: #e7f5ff;
-  padding: 15px;
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary-50) 0%, #dbeafe 100%);
+  padding: 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--primary-100);
 }
 
 .add-am-form h4 {
-  margin: 0 0 10px 0;
-  color: #1971c2;
+  margin: 0 0 14px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--primary-700);
 }
 
 .form-row {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
 }
 
 .form-row input[type="text"] {
   flex-grow: 1;
-  padding: 8px;
-  border: 1px solid #a5d8ff;
-  border-radius: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--primary-200);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  background: white;
 }
 
-input[type="color"] {
-  border: none;
-  width: 40px;
-  height: 35px;
-  cursor: pointer;
-  background: none;
+.form-row input[type="text"]:focus {
+  outline: none;
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 3px var(--primary-100);
 }
 
-.actions {
-  display: flex;
-  gap: 5px;
+.form-row .btn-primary {
+  white-space: nowrap;
 }
 
-.actions button {
-  display: flex;
-  align-items: center;
+/* === État vide === */
+.team-empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--gray-500);
 }
-.btn-icon {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.1rem;
-  padding: 2px 5px;
-}
-.btn-icon:hover {
-  background-color: #eee;
-  border-radius: 4px;
-}
-.btn-icon.delete {
-  color: #fa5252;
-}
-.btn-icon.save {
-  color: #40c057;
-}
-.edit-row {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  width: 100%;
-}
-.edit-row input[type="text"] {
-  flex-grow: 1;
-  padding: 4px;
-}
-.edit-row button {
-  display: flex;
-  align-items: center;
+
+.team-empty-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.3;
 }

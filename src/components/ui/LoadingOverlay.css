@@ -1,50 +1,59 @@
+/* === Loading Overlay === */
 .loading-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(255, 255, 255, 0.8); /* Fond blanc semi-transparent */
-  backdrop-filter: blur(4px); /* Effet de flou moderne */
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 9999; /* Toujours au-dessus de tout */
+  z-index: 9999;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .loading-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  gap: 20px;
   background: white;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  padding: 40px 50px;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--gray-100);
 }
 
 .loading-content p {
-  color: #555;
+  color: var(--gray-600);
   font-weight: 500;
-  font-size: 1.1rem;
+  font-size: 1rem;
   margin: 0;
 }
 
-/* Animation du Spinner */
+/* === Spinner animé === */
 .spinner {
-  width: 50px;
-  height: 50px;
-  border: 5px solid #f3f3f3; /* Gris clair */
-  border-top: 5px solid #228be6; /* Bleu (ta couleur primaire) */
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--gray-200);
+  border-top-color: var(--primary-500);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
+  to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }

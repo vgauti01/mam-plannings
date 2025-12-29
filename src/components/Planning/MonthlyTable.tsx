@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { AssistantProfile, Day } from "../../types";
+import { AssistantProfile, Day, TimeRange } from "../../types";
 import {
   formatDayLabel,
   isSameMonth,
   minutesToTime,
   formatDuration,
 } from "../../utils/formatters";
+import { TimelineEditor } from "./TimelineEditor";
 import "./MonthlyTable.css";
 
 interface Props {
@@ -14,7 +15,29 @@ interface Props {
   currentMonth: Date;
   onDayClick: (day: Day) => void;
   onSwap: (date: string, amId1: number, amId2: number) => void;
+  onShiftChange: (date: string, amId: number, newRanges: TimeRange[]) => void;
 }
+
+/**
+ * Calcule le total de minutes pour un shift (somme de toutes les plages horaires)
+ */
+const getShiftTotalMinutes = (heures: TimeRange[]): number => {
+  return heures.reduce((acc, range) => acc + (range.depart - range.arrivee), 0);
+};
+
+/**
+ * Formate les horaires d'un shift pour l'affichage
+ */
+const formatShiftHours = (heures: TimeRange[]): string => {
+  if (heures.length === 0) return "";
+  if (heures.length === 1) {
+    return `${minutesToTime(heures[0].arrivee)} - ${minutesToTime(heures[0].depart)}`;
+  }
+  // Si plusieurs plages, afficher la première et dernière heure
+  const firstStart = Math.min(...heures.map((h) => h.arrivee));
+  const lastEnd = Math.max(...heures.map((h) => h.depart));
+  return `${minutesToTime(firstStart)} - ${minutesToTime(lastEnd)}`;
+};
 
 export const MonthlyTable = ({
   days,
@@ -22,6 +45,7 @@ export const MonthlyTable = ({
   currentMonth,
   onDayClick,
   onSwap,
+  onShiftChange,
 }: Props) => {
   // État du Drag & Drop
   const [draggedData, setDraggedData] = useState<{
@@ -33,18 +57,34 @@ export const MonthlyTable = ({
     amId: number;
   } | null>(null);
 
-  const monthDays = days.filter(d => isSameMonth(d.date, currentMonth));
+  // État pour les lignes dépliées
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (date: string) => {
+    setExpandedDays((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(date)) {
+        newSet.delete(date);
+      } else {
+        newSet.add(date);
+      }
+      return newSet;
+    });
+  };
+
+  const monthDays = days.filter((d) => isSameMonth(d.date, currentMonth));
 
   // 1. Récupérer les IDs de l'équipe active (Configuration)
-  const configIds = team.map(t => t.id);
+  const configIds = team.map((t) => t.id);
 
   // 2. Récupérer les IDs qui ont réellement des shifts dans les données (Données)
   const dataIds = new Set<number>();
-  monthDays.forEach(d => d.am.forEach(s => dataIds.add(s.am_id)));
+  monthDays.forEach((d) => d.am.forEach((s) => dataIds.add(s.am_id)));
 
   // 3. Fusionner les deux listes, retirer les doublons et trier
-  const amIds = Array.from(new Set([...configIds, ...Array.from(dataIds)]))
-    .sort((a, b) => a - b);
+  const amIds = Array.from(
+    new Set([...configIds, ...Array.from(dataIds)])
+  ).sort((a, b) => a - b);
 
   // Calcul dynamique des colonnes nécessaires
   let maxAmIdInData = 0;
@@ -101,7 +141,9 @@ export const MonthlyTable = ({
     monthDays.forEach((day) => {
       day.am
         .filter((s) => s.am_id === amId)
-        .forEach((s) => (total += s.depart - s.arrivee));
+        .forEach((s) => {
+          total += getShiftTotalMinutes(s.heures);
+        });
     });
     return total;
   });
@@ -120,59 +162,90 @@ export const MonthlyTable = ({
           </tr>
         </thead>
         <tbody>
-          {monthDays.map((day) => (
-            <tr key={day.date} className="day-row">
-              <td
-                className="date-cell sticky-col"
-                onClick={() => onDayClick(day)}
-              >
-                <div className="date-content">
-                  <span className="day-name">
-                    {formatDayLabel(day.date).split(" ")[0]}
-                  </span>
-                  <span className="day-num">
-                    {formatDayLabel(day.date).split(" ")[1]}
-                  </span>
-                </div>
-              </td>
+          {monthDays.map((day) => {
+            const isExpanded = expandedDays.has(day.date);
+            const hasShifts = day.am.length > 0;
 
-              {amIds.map((amId) => {
-                const shifts = day.am.filter((s) => s.am_id === amId);
-                const hasShift = shifts.length > 0;
-
-                const isDragOver =
-                  dragOverTarget?.date === day.date &&
-                  dragOverTarget?.amId === amId;
-                const isDragging =
-                  draggedData?.date === day.date && draggedData?.amId === amId;
-
-                return (
+            return (
+              <React.Fragment key={day.date}>
+                {/* Ligne principale */}
+                <tr className={`day-row ${isExpanded ? "expanded" : ""}`}>
                   <td
-                    key={`${day.date}-${amId}`}
-                    className={`shift-cell ${hasShift ? "filled" : "empty"} ${isDragOver ? "drag-over" : ""} ${isDragging ? "dragging" : ""}`}
-                    // DRAG EVENTS
-                    draggable={hasShift}
-                    onDragStart={(e) => handleDragStart(e, day.date, amId)}
-                    onDragOver={(e) => handleDragOver(e, day.date, amId)}
-                    onDrop={(e) => handleDrop(e, day.date, amId)}
-                    // UX : On quitte la zone -> on nettoie la cible visuelle
-                    onDragLeave={() => setDragOverTarget(null)}
+                    className="date-cell sticky-col"
                     onClick={() => onDayClick(day)}
                   >
-                    {shifts.map((s, i) => (
-                      <div key={i} className="shift-pill">
-                        {minutesToTime(s.arrivee)} - {minutesToTime(s.depart)}
-                      </div>
-                    ))}
-                    {/* Aide visuelle au survol lors du drag */}
-                    {isDragOver && !hasShift && (
-                      <div className="ghost-pill">⇄ Déposer ici</div>
-                    )}
+                    <div className="date-content">
+                      <span className="day-name">
+                        {formatDayLabel(day.date).split(" ")[0]}
+                      </span>
+                      <span className="day-num">
+                        {formatDayLabel(day.date).split(" ")[1]}
+                      </span>
+                    </div>
                   </td>
-                );
-              })}
-            </tr>
-          ))}
+
+                  {amIds.map((amId) => {
+                    const shift = day.am.find((s) => s.am_id === amId);
+                    const hasShift = shift && shift.heures.length > 0;
+
+                    const isDragOver =
+                      dragOverTarget?.date === day.date &&
+                      dragOverTarget?.amId === amId;
+                    const isDragging =
+                      draggedData?.date === day.date &&
+                      draggedData?.amId === amId;
+
+                    return (
+                      <td
+                        key={`${day.date}-${amId}`}
+                        className={`shift-cell ${hasShift ? "filled" : "empty"} ${isDragOver ? "drag-over" : ""} ${isDragging ? "dragging" : ""}`}
+                        // DRAG EVENTS
+                        draggable={hasShift}
+                        onDragStart={(e) => handleDragStart(e, day.date, amId)}
+                        onDragOver={(e) => handleDragOver(e, day.date, amId)}
+                        onDrop={(e) => handleDrop(e, day.date, amId)}
+                        // UX : On quitte la zone -> on nettoie la cible visuelle
+                        onDragLeave={() => setDragOverTarget(null)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (hasShifts) {
+                            toggleExpand(day.date);
+                          }
+                        }}
+                      >
+                        {hasShift && (
+                          <div className="shift-pill">
+                            {formatShiftHours(shift.heures)}
+                          </div>
+                        )}
+                        {/* Aide visuelle au survol lors du drag */}
+                        {isDragOver && !hasShift && (
+                          <div className="ghost-pill">⇄ Déposer ici</div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+
+                {/* Ligne dépliée avec TimelineEditor */}
+                {isExpanded && (
+                  <tr className="timeline-row">
+                    <td colSpan={amIds.length + 1} className="timeline-cell">
+                      <TimelineEditor
+                        enfants={day.enfants}
+                        shifts={day.am}
+                        team={team}
+                        ratio={day.ratio || 4}
+                        onShiftChange={(amId, newRanges) =>
+                          onShiftChange(day.date, amId, newRanges)
+                        }
+                      />
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr>

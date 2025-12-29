@@ -13,17 +13,6 @@ export interface AssistantProfile {
 }
 
 /**
- * Type représentant les paramètres mensuels pour le planning.
- * Inclut un ratio et une équipe active d'assistants maternels.
- * @property {number} ratio - Ratio utilisé pour le planning.
- * @property {AssistantProfile[]} active_team - Liste des assistants maternels actifs pour le mois.
- */
-export interface MonthSettings {
-  ratio: number;
-  active_team: AssistantProfile[];
-}
-
-/**
  * Type représentant une plage horaire avec une heure d'arrivée et de départ.
  * Les heures sont exprimées en minutes depuis minuit.
  *
@@ -50,13 +39,11 @@ export interface Child {
  * Type représentant le shift d'un assistant maternel pour une journée donnée.
  *
  * @property {number} am_id - Identifiant de l'assistant maternel.
- * @property {number} arrivee - Heure d'arrivée en minutes depuis minuit.
- * @property {number} depart - Heure de départ en minutes depuis minuit.
+ * @property {TimeRange[]} heures - Liste des plages horaires de l'assistant.
  */
 export interface AssistantShift {
   am_id: number;
-  arrivee: number;
-  depart: number;
+  heures: TimeRange[];
 }
 
 /**
@@ -66,10 +53,12 @@ export interface AssistantShift {
  * @property {string} jour - Jour de la semaine en français ("Lundi", "Mardi", etc.).
  * @property {Child[]} enfants - Liste des enfants présents ce jour-là.
  * @property {AssistantShift[]} am - Liste des shifts des assistants maternels pour ce jour-là.
+ * @property {number} ratio - Ratio enfants par assistant maternel.
  */
 export interface Day {
   date: string; // "YYYY-MM-DD"
   jour: string; // "Lundi", "Mardi"...
   enfants: Child[];
   am: AssistantShift[];
+  ratio: number; // Ratio enfants/AM (ex: 4)
 }

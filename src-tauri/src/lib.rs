@@ -27,16 +27,14 @@ pub fn run() {
             remove_day,
             import_planning_pdf,
             swap_shifts,
+            edit_assistant_shift,
+            update_day_ratio,
 
             // Gestion Annuaire (Library)
             get_team_library,
             add_assistant,
             update_assistant,
             remove_assistant,
-
-            // Gestion Mois (Settings)
-            get_month_config,
-            update_month_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

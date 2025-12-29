@@ -1,28 +1,65 @@
+/* === Navigation Mois === */
 .month-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
+
 .month-nav h2 {
   margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--gray-800);
   text-transform: capitalize;
-  min-width: 200px;
+  min-width: 220px;
   text-align: center;
+  letter-spacing: -0.01em;
 }
+
 .month-nav button {
-  background: transparent;
-  border: 1px solid #ddd;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  cursor: pointer;
-  font-size: 1.2rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 42px;
+  height: 42px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--gray-600);
+  transition: all 0.15s ease;
 }
+
 .month-nav button:hover {
-  background: #f0f0f0;
+  background: var(--primary-50);
+  border-color: var(--primary-200);
+  color: var(--primary-600);
+}
+
+.month-nav button:active {
+  transform: scale(0.95);
+}
+
+/* Navigation rapide vers aujourd'hui */
+.month-nav-today {
+  position: absolute;
+  right: 16px;
+  font-size: 0.8rem;
+  color: var(--primary-600);
+  background: var(--primary-50);
+  border: 1px solid var(--primary-200);
+  padding: 6px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.month-nav-today:hover {
+  background: var(--primary-100);
 }

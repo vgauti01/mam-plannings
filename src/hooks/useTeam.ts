@@ -1,6 +1,6 @@
 // src/hooks/usePlanning.ts
-import {useState, useEffect, useCallback} from "react";
-import {AssistantProfile} from "../types";
+import { useState, useEffect, useCallback } from "react";
+import { AssistantProfile } from "../types";
 import { planningService } from "../services/planningService";
 
 /**
@@ -46,6 +46,7 @@ export const useTeam = (): UseTeamReturn => {
 
   // Charger au démarrage
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadTeam();
   }, [loadTeam]);
 

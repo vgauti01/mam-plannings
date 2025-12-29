@@ -1,6 +1,6 @@
 // src/hooks/usePlanning.ts
-import {useState, useEffect, useCallback} from "react";
-import {AssistantProfile, Day, MonthSettings} from "../types";
+import { useState, useEffect } from "react";
+import { Day, TimeRange } from "../types";
 import { planningService } from "../services/planningService";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -13,15 +13,19 @@ import { open } from "@tauri-apps/plugin-dialog";
  * @param {() => Promise<void>} handleImportPdf - Fonction pour importer un fichier PDF.
  * @param {(date: string, name: string, start: string, end: string) => Promise<void>} handleAddEntry - Fonction pour ajouter une entrée manuelle.
  * @param {(date: string, childName: string) => Promise<void>} handleDeleteChild - Fonction pour supprimer un enfant d'un jour.
+ * @param {(date: string, amId: number, newRanges: TimeRange[]) => Promise<void>} handleUpdateShift - Fonction pour mettre à jour un shift AM.
  * @param {boolean} loading - Indicateur de chargement.
  * @param {string | null} error - Message d'erreur s'il y en a un.
  */
 interface UsePlanningReturn {
   days: Day[];
-  currentConfig: MonthSettings | null;
   handleRemoveDay: (date: string) => Promise<void>;
   handleSwap: (date: string, id1: number, id2: number) => Promise<void>;
-  handleImportPdf: () => Promise<void>;
+  handleImportPdf: (
+    year: number,
+    ratio: number,
+    active_team_ids: number[]
+  ) => Promise<void>;
   handleAddEntry: (
     date: string,
     name: string,
@@ -29,12 +33,12 @@ interface UsePlanningReturn {
     end: string
   ) => Promise<void>;
   handleDeleteChild: (date: string, childName: string) => Promise<void>;
-  loadMonthConfig: (date: Date) => Promise<void>;
-  handleSaveMonthConfig: (
-    date: Date,
-    ratio: number,
-    activeTeam: AssistantProfile[]
+  handleUpdateShift: (
+    date: string,
+    amId: number,
+    newRanges: TimeRange[]
   ) => Promise<void>;
+  handleUpdateRatio: (date: string, ratio: number) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
@@ -47,8 +51,6 @@ interface UsePlanningReturn {
 export const usePlanning = (): UsePlanningReturn => {
   // États locaux
   const [days, setDays] = useState<Day[]>([]);
-  // Config actuelle (Ratio...)
-  const [currentConfig, setCurrentConfig] = useState<MonthSettings | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,48 +77,17 @@ export const usePlanning = (): UsePlanningReturn => {
     void loadPlanning();
   }, []);
 
-  // --- CHARGER LA CONFIG DU MOIS ---
-  const loadMonthConfig = useCallback(async (date: Date) => {
-    try {
-      const y = date.getFullYear();
-      const m = date.getMonth() + 1; // JS mois 0-11 -> Rust 1-12
-
-      const config = await planningService.getMonthConfig(y, m);
-      console.log(JSON.stringify(config))
-
-      setCurrentConfig(config);
-    } catch (e) {
-      console.error("Erreur chargement config mois:", e);
-    }
-  }, []);
-
-  // --- SAUVEGARDER LA CONFIG ---
-  const handleSaveMonthConfig = async (date: Date, ratio: number, activeTeam: AssistantProfile[]) => {
-    setLoading(true);
-    try {
-      const y = date.getFullYear();
-      const m = date.getMonth() + 1;
-
-      // Le backend renvoie les jours recalculés
-      const updatedDays = await planningService.updateMonthConfig(y, m, ratio, activeTeam);
-
-      setDays(updatedDays);
-      // On recharge la config pour être sûr d'être synchro
-      await loadMonthConfig(date);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   /**
    * Gère l'importation d'un fichier PDF.
    * Ouvre une boîte de dialogue pour sélectionner le fichier, puis importe le planning.
    * Met à jour l'état des jours, du chargement et des erreurs en conséquence.
    * @return {Promise<void>}
    */
-  const handleImportPdf = async (): Promise<void> => {
+  const handleImportPdf = async (
+    year: number,
+    ratio: number,
+    active_team_ids: number[]
+  ): Promise<void> => {
     try {
       // 1. On ouvre la boîte de dialogue d'abord
       const file = await open({
@@ -126,24 +97,15 @@ export const usePlanning = (): UsePlanningReturn => {
 
       // Si l'utilisateur a sélectionné un fichier
       if (file) {
-        // Demander l'année du planning
-        const currentYear = new Date().getFullYear();
-        const userYearStr = window.prompt(
-          "Pour quelle année est ce planning ?",
-          String(currentYear)
-        );
-        if (userYearStr === null) return;
-
-        const year = parseInt(userYearStr, 10);
-        if (isNaN(year)) {
-          alert("Année invalide.");
-          return;
-        }
-
         // 2. DÉBUT DU CHARGEMENT
         setLoading(true);
 
-        const updated = await planningService.importPdf(file, year);
+        const updated = await planningService.importPdf(
+          file,
+          year,
+          ratio,
+          active_team_ids
+        );
 
         setDays(updated);
       }
@@ -238,16 +200,57 @@ export const usePlanning = (): UsePlanningReturn => {
     }
   };
 
+  /**
+   * Met à jour les horaires d'un assistant maternel pour un jour donné.
+   * @param {string} date - La date du jour à modifier.
+   * @param {number} amId - L'ID de l'assistant maternel.
+   * @param {TimeRange[]} newRanges - Les nouvelles plages horaires.
+   * @return {Promise<void>}
+   */
+  const handleUpdateShift = async (
+    date: string,
+    amId: number,
+    newRanges: TimeRange[]
+  ): Promise<void> => {
+    try {
+      const updated = await planningService.updateAssistantShift(
+        date,
+        amId,
+        newRanges
+      );
+      setDays(updated);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  /**
+   * Met à jour le ratio enfants/AM pour un jour donné.
+   * @param {string} date - La date du jour à modifier.
+   * @param {number} ratio - Le nouveau ratio.
+   * @return {Promise<void>}
+   */
+  const handleUpdateRatio = async (
+    date: string,
+    ratio: number
+  ): Promise<void> => {
+    try {
+      const updated = await planningService.updateDayRatio(date, ratio);
+      setDays(updated);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   return {
     days,
-    currentConfig,
     handleRemoveDay,
     handleSwap,
     handleImportPdf,
     handleAddEntry,
     handleDeleteChild,
-    loadMonthConfig,
-    handleSaveMonthConfig,
+    handleUpdateShift,
+    handleUpdateRatio,
     loading,
     error,
   };

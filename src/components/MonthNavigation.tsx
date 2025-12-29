@@ -1,14 +1,13 @@
 import { formatMonthYear } from "../utils/formatters";
 import "./MonthNavigation.css";
-import {LuChevronLeft, LuChevronRight, LuSettings} from "react-icons/lu";
+import { LuChevronLeft, LuChevronRight } from "react-icons/lu";
 
 interface Props {
   currentDate: Date;
   onChange: (newDate: Date) => void;
-  openSettings: () => void;
 }
 
-export const MonthNavigation = ({ currentDate, onChange, openSettings }: Props) => {
+export const MonthNavigation = ({ currentDate, onChange }: Props) => {
   const handlePrev = () => {
     const newDate = new Date(currentDate);
     newDate.setMonth(newDate.getMonth() - 1);
@@ -27,9 +26,6 @@ export const MonthNavigation = ({ currentDate, onChange, openSettings }: Props) 
         <LuChevronLeft />
       </button>
       <h2>{formatMonthYear(currentDate)}</h2>
-      <button onClick={openSettings}>
-        <LuSettings />
-      </button>
       <button onClick={handleNext}>
         <LuChevronRight />
       </button>
