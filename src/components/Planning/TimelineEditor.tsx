@@ -364,16 +364,19 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
         {shift.heures.map((range, idx) => {
           const left = minutesToPixels(range.arrivee);
           const width = minutesToPixels(range.depart) - left;
+          const isNarrow = width < 80; // Plage trop étroite pour afficher le texte
+          const timeLabel = `${minutesToTime(range.arrivee)} - ${minutesToTime(range.depart)}`;
 
           return (
             <div
               key={idx}
-              className={`shift-block ${dragState?.rangeIndex === idx ? "dragging" : ""}`}
+              className={`shift-block ${dragState?.rangeIndex === idx ? "dragging" : ""} ${isNarrow ? "narrow" : ""}`}
               style={{
                 left: `${left}px`,
                 width: `${width}px`,
                 backgroundColor: color,
               }}
+              title={timeLabel}
             >
               {/* Poignée gauche */}
               <div
@@ -385,9 +388,9 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
                 className="shift-block-content"
                 onMouseDown={(e) => handleMouseDown(e, idx, "move")}
               >
-                <span className="shift-time-label">
-                  {minutesToTime(range.arrivee)} - {minutesToTime(range.depart)}
-                </span>
+                {!isNarrow && (
+                  <span className="shift-time-label">{timeLabel}</span>
+                )}
               </div>
               {/* Bouton de suppression */}
               <button
