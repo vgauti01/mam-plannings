@@ -227,6 +227,21 @@ const isColorLight = (hex: string) => {
 };
 
 /**
+ * Convertit un index de colonne (0-based) en lettre Excel
+ * @param index 0 → A, 1 → B, 26 → AA, etc.
+ * @returns Lettre de colonne Excel
+ */
+const getExcelColumnLetter = (index: number): string => {
+  let letter = "";
+  let temp = index;
+  while (temp >= 0) {
+    letter = String.fromCharCode((temp % 26) + 65) + letter;
+    temp = Math.floor(temp / 26) - 1;
+  }
+  return letter;
+};
+
+/**
  * Génère un fichier Excel (XLSX) du planning mensuel.
  * Ce format est facilement modifiable par l'utilisateur dans Excel, LibreOffice, etc.
  *
@@ -253,57 +268,157 @@ export const generateMonthlyExcel = async (
   const columnCount = Math.max(team.length, maxAmId + 1);
   const amIds = Array.from({ length: columnCount }, (_, i) => i);
 
-  // 3. Créer les données du tableau
-  const headers = [
-    "Date",
-    ...amIds.map((id) => team.find((t) => t.id === id)?.name || `AM ${id + 1}`),
-  ];
-
-  const dataRows = monthDays.map((day) => {
-    const row: string[] = [formatDayLabel(day.date)];
-
-    amIds.forEach((amId) => {
-      const shift = day.am.find((s) => s.am_id === amId);
-      if (shift && shift.heures.length > 0) {
-        const text = shift.heures
-          .map(
-            (h) => `${minutesToTime(h.arrivee)} - ${minutesToTime(h.depart)}`
-          )
-          .join(" / ");
-        row.push(text);
-      } else {
-        row.push("");
+  // 2b. Déterminer le nombre maximum de shifts par jour dans le mois
+  let maxShiftsPerDay = 1;
+  monthDays.forEach((d) => {
+    d.am.forEach((s) => {
+      if (s.heures.length > maxShiftsPerDay) {
+        maxShiftsPerDay = s.heures.length;
       }
+    });
+  });
+
+  // 3. Créer les données du tableau avec colonnes séparées Arrivée/Départ
+  const headers = ["Date"];
+  amIds.forEach((id) => {
+    const amName = team.find((t) => t.id === id)?.name || `AM ${id + 1}`;
+    // Créer dynamiquement les colonnes en fonction du nombre max de shifts
+    for (let i = 1; i <= maxShiftsPerDay; i++) {
+      headers.push(`${amName}_Arr${i}`); // Arrivée shift i
+      headers.push(`${amName}_Dép${i}`); // Départ shift i
+    }
+    headers.push(`${amName}_Total`); // Total heures du jour
+  });
+
+  const dataRows = monthDays.map((day, dayIndex) => {
+    const row: (string | number | { f: string })[] = [formatDayLabel(day.date)];
+
+    amIds.forEach((amId, amIndex) => {
+      const shift = day.am.find((s) => s.am_id === amId);
+
+      // Convertir les minutes en valeur Excel TIME (fraction de jour)
+      // Excel TIME: 0 = minuit, 0.5 = midi, 1 = minuit suivant
+      const minutesToExcelTime = (minutes: number) => minutes / 1440;
+
+      // Ajouter toutes les paires Arrivée/Départ pour chaque shift possible
+      for (let shiftNum = 0; shiftNum < maxShiftsPerDay; shiftNum++) {
+        if (shift && shift.heures[shiftNum]) {
+          const currentShift = shift.heures[shiftNum];
+          row.push(minutesToExcelTime(currentShift.arrivee));
+          row.push(minutesToExcelTime(currentShift.depart));
+        } else {
+          row.push(""); // Pas de shift à cet index
+          row.push("");
+        }
+      }
+
+      // Total du jour : formule calculant somme de tous les shifts
+      // Colonnes : Date=0, puis pour chaque AM: Arr1, Dép1, Arr2, Dép2, ..., Total
+      // Nombre de colonnes par AM = maxShiftsPerDay * 2 + 1 (Total)
+      const colsPerAm = maxShiftsPerDay * 2 + 1;
+      const baseCol = 1 + amIndex * colsPerAm;
+      const rowNum = dayIndex + 2; // +2 car ligne 1 = headers
+
+      // Construire la formule dynamiquement
+      const formulaParts: string[] = [];
+      for (let i = 0; i < maxShiftsPerDay; i++) {
+        const arrCol = getExcelColumnLetter(baseCol + i * 2);
+        const depCol = getExcelColumnLetter(baseCol + i * 2 + 1);
+        formulaParts.push(
+          `IF(${arrCol}${rowNum}="",0,(${depCol}${rowNum}-${arrCol}${rowNum})*24)`
+        );
+      }
+
+      const formula = formulaParts.join("+");
+      row.push({ f: formula });
     });
 
     return row;
   });
 
-  // 4. Calculer les totaux
-  const totals = ["TOTAL"];
-  amIds.forEach((amId) => {
-    let totalMinutes = 0;
-    monthDays.forEach((day) => {
-      const shift = day.am.find((s) => s.am_id === amId);
-      if (shift) {
-        shift.heures.forEach((h) => (totalMinutes += h.depart - h.arrivee));
-      }
-    });
-    totals.push(formatDuration(totalMinutes));
+  // 4. Créer les totaux avec formules Excel
+  const lastDataRow = dataRows.length + 1; // +1 pour la ligne d'en-tête
+  const totalsRow: (string | { f: string })[] = ["TOTAL"];
+
+  amIds.forEach((_amId, index) => {
+    // Nombre de colonnes par AM = maxShiftsPerDay * 2 (Arr/Dép) + 1 (Total)
+    const colsPerAm = maxShiftsPerDay * 2 + 1;
+    const totalColIndex = 1 + index * colsPerAm + maxShiftsPerDay * 2; // Sauter toutes les Arr/Dép
+    const totalCol = getExcelColumnLetter(totalColIndex);
+
+    // Formule pour sommer tous les totaux du mois et formater en "XXhYY"
+    const formula = `TEXT(FLOOR(SUM(${totalCol}2:${totalCol}${lastDataRow}),1),"0")&"h"&TEXT(MOD(SUM(${totalCol}2:${totalCol}${lastDataRow}),1)*60,"00")`;
+
+    // Colonnes vides pour toutes les paires Arr/Dép
+    for (let i = 0; i < maxShiftsPerDay * 2; i++) {
+      totalsRow.push("");
+    }
+    // Formule dans la colonne Total
+    totalsRow.push({ f: formula });
   });
 
   // 5. Assembler toutes les lignes
-  const allRows = [headers, ...dataRows, [], totals];
+  const allRows = [headers, ...dataRows, [], totalsRow];
 
   // 6. Créer le workbook et la worksheet
   const worksheet = XLSX.utils.aoa_to_sheet(allRows);
 
-  // 7. Définir la largeur des colonnes
-  const colWidths = [{ wch: 15 }]; // Colonne Date
-  amIds.forEach(() => colWidths.push({ wch: 20 })); // Colonnes AM
+  // 7. Définir la largeur des colonnes et le format
+  const colWidths: Array<{ wch: number }> = [{ wch: 15 }]; // Colonne Date
+  amIds.forEach(() => {
+    // Pour chaque AM, ajouter les colonnes Arr/Dép de chaque shift
+    for (let i = 0; i < maxShiftsPerDay; i++) {
+      colWidths.push({ wch: 12 }); // Arrivée
+      colWidths.push({ wch: 12 }); // Départ
+    }
+    colWidths.push({ wch: 10 }); // Total
+  });
   worksheet["!cols"] = colWidths;
 
-  // 8. Créer le workbook
+  // 8. Formater les colonnes TIME (hh:mm) et Total (nombre décimal)
+  // Pour chaque cellule de données (pas les headers ni totaux)
+  dataRows.forEach((_row, rowIndex) => {
+    const excelRow = rowIndex + 2; // +2 car row 1 = headers, row 2 = première donnée
+    amIds.forEach((_amId, amIndex) => {
+      const colsPerAm = maxShiftsPerDay * 2 + 1;
+      const baseCol = 1 + amIndex * colsPerAm;
+
+      // Format TIME pour toutes les paires Arr/Dép
+      for (let i = 0; i < maxShiftsPerDay * 2; i++) {
+        const cellAddress = `${getExcelColumnLetter(baseCol + i)}${excelRow}`;
+        if (
+          worksheet[cellAddress] &&
+          typeof worksheet[cellAddress].v === "number"
+        ) {
+          worksheet[cellAddress].z = "hh:mm"; // Format Excel TIME
+        }
+      }
+      // Format numérique pour Total (dernière colonne de l'AM)
+      const totalCellAddress = `${getExcelColumnLetter(baseCol + maxShiftsPerDay * 2)}${excelRow}`;
+      if (worksheet[totalCellAddress]) {
+        worksheet[totalCellAddress].z = "0.00"; // Format décimal 2 chiffres
+      }
+    });
+  });
+
+  // 9. Configuration d'impression
+  // Geler la première ligne (en-têtes) pour faciliter la lecture
+  worksheet["!freeze"] = { xSplit: 1, ySplit: 1 };
+
+  // Définir les marges d'impression (en pouces)
+  worksheet["!margins"] = {
+    left: 0.5,
+    right: 0.5,
+    top: 0.75,
+    bottom: 0.75,
+    header: 0.3,
+    footer: 0.3,
+  };
+
+  // Répéter la ligne d'en-têtes sur chaque page imprimée
+  worksheet["!rows"] = [{ hpx: 20 }]; // Hauteur de la première ligne (headers)
+
+  // 10. Créer le workbook
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(
     workbook,
@@ -311,10 +426,10 @@ export const generateMonthlyExcel = async (
     formatMonthYear(currentMonth)
   );
 
-  // 9. Générer le fichier binaire
+  // 11. Générer le fichier binaire
   const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
 
-  // 10. Sauvegarder avec la boîte de dialogue Tauri
+  // 12. Sauvegarder avec la boîte de dialogue Tauri
   const fileName = `Planning_${formatMonthYear(currentMonth).replace(" ", "_")}.xlsx`;
 
   try {
