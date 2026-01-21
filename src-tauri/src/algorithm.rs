@@ -312,3 +312,224 @@ fn build_segments(enfants: &[Child], max_am: u8, ratio: u8) -> Vec<Segment> {
     // Retourner les segments construits
     segments
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_child(nom: &str, arrivee: u16, depart: u16) -> Child {
+        Child {
+            nom: nom.to_string(),
+            heures: vec![TimeRange { arrivee, depart }],
+        }
+    }
+
+    fn create_am(id: u8, name: &str) -> AssistantProfile {
+        AssistantProfile {
+            id,
+            name: name.to_string(),
+            color: "#000000".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_no_children_returns_empty() {
+        let enfants: Vec<Child> = vec![];
+        let ams = vec![create_am(0, "AM1")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_single_child_single_am() {
+        let enfants = vec![create_child("Alice", 480, 1020)]; // 8h - 17h
+        let ams = vec![create_am(0, "AM1")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].am_id, 0);
+        assert_eq!(result[0].heures.len(), 1);
+        assert_eq!(result[0].heures[0].arrivee, 480);
+        assert_eq!(result[0].heures[0].depart, 1020);
+    }
+
+    #[test]
+    fn test_four_children_need_one_am_with_ratio_4() {
+        let enfants = vec![
+            create_child("Alice", 480, 1020),
+            create_child("Bob", 480, 1020),
+            create_child("Charlie", 480, 1020),
+            create_child("David", 480, 1020),
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        // Avec 4 enfants et ratio 4, on a besoin de 1 AM seulement
+        let total_am_with_hours: usize = result.iter()
+            .filter(|s| !s.heures.is_empty())
+            .count();
+        assert_eq!(total_am_with_hours, 1);
+    }
+
+    #[test]
+    fn test_five_children_need_two_am_with_ratio_4() {
+        let enfants = vec![
+            create_child("Alice", 480, 1020),
+            create_child("Bob", 480, 1020),
+            create_child("Charlie", 480, 1020),
+            create_child("David", 480, 1020),
+            create_child("Eve", 480, 1020),
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        // Avec 5 enfants et ratio 4, on a besoin de ceil(5/4) = 2 AM
+        let total_am_with_hours: usize = result.iter()
+            .filter(|s| !s.heures.is_empty())
+            .count();
+        assert_eq!(total_am_with_hours, 2);
+    }
+
+    #[test]
+    fn test_children_arriving_at_different_times() {
+        // 2 enfants le matin, 2 autres l'après-midi
+        let enfants = vec![
+            create_child("Alice", 480, 720),   // 8h - 12h
+            create_child("Bob", 480, 720),     // 8h - 12h
+            create_child("Charlie", 840, 1020), // 14h - 17h
+            create_child("David", 840, 1020),   // 14h - 17h
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        // On devrait avoir seulement 1 AM car jamais plus de 2 enfants simultanés
+        let total_am_with_hours: usize = result.iter()
+            .filter(|s| !s.heures.is_empty())
+            .count();
+        assert_eq!(total_am_with_hours, 1);
+    }
+
+    #[test]
+    fn test_am_shifts_cover_all_children_presence() {
+        let enfants = vec![
+            create_child("Alice", 480, 1020),
+            create_child("Bob", 540, 960),
+        ];
+        let ams = vec![create_am(0, "AM1")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        assert_eq!(result.len(), 1);
+        // Le shift doit couvrir de 8h (premier arrivé) à 17h (dernier parti)
+        let shift = &result[0];
+        assert_eq!(shift.heures[0].arrivee, 480);
+        assert_eq!(shift.heures[0].depart, 1020);
+    }
+
+    #[test]
+    fn test_balanced_compute_with_accumulated_hours() {
+        let enfants = vec![
+            create_child("Alice", 480, 1020),
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+
+        // AM1 a déjà travaillé 600 minutes, AM2 seulement 100
+        let mut accumulated: HashMap<u8, u32> = HashMap::new();
+        accumulated.insert(0, 600);
+        accumulated.insert(1, 100);
+
+        let result = compute_assistant_shifts_balanced(&enfants, 4, &ams, &accumulated);
+
+        // L'algorithme devrait préférer AM2 car il a moins d'heures
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].am_id, 1);
+    }
+
+    #[test]
+    fn test_multiple_time_ranges_per_child() {
+        let enfants = vec![Child {
+            nom: "Alice".to_string(),
+            heures: vec![
+                TimeRange { arrivee: 480, depart: 720 },  // 8h - 12h
+                TimeRange { arrivee: 840, depart: 1020 }, // 14h - 17h
+            ],
+        }];
+        let ams = vec![create_am(0, "AM1")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        assert!(!result.is_empty());
+        // L'AM doit avoir au moins 2 plages (ou une plage continue selon l'algo)
+        let total_minutes: u32 = result[0].heures.iter()
+            .map(|r| (r.depart - r.arrivee) as u32)
+            .sum();
+        // 4h le matin + 3h l'après-midi = 7h = 420 min
+        assert!(total_minutes >= 420);
+    }
+
+    #[test]
+    fn test_ratio_3_needs_more_ams() {
+        let enfants = vec![
+            create_child("Alice", 480, 1020),
+            create_child("Bob", 480, 1020),
+            create_child("Charlie", 480, 1020),
+            create_child("David", 480, 1020),
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+
+        // Avec ratio 3, 4 enfants nécessitent ceil(4/3) = 2 AM
+        let result = compute_assistant_shifts(&enfants, 3, &ams);
+        let total_am_with_hours: usize = result.iter()
+            .filter(|s| !s.heures.is_empty())
+            .count();
+        assert_eq!(total_am_with_hours, 2);
+    }
+
+    #[test]
+    fn test_max_am_limit() {
+        // Beaucoup d'enfants mais seulement 2 AM disponibles
+        let enfants: Vec<Child> = (0..20)
+            .map(|i| create_child(&format!("Enfant{}", i), 480, 1020))
+            .collect();
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        // On ne peut pas avoir plus de 2 AM (le max disponible)
+        let total_am_with_hours: usize = result.iter()
+            .filter(|s| !s.heures.is_empty())
+            .count();
+        assert!(total_am_with_hours <= 2);
+    }
+
+    #[test]
+    fn test_progressive_arrival_departure() {
+        // Les enfants arrivent progressivement puis partent progressivement
+        let enfants = vec![
+            create_child("Alice", 480, 900),   // 8h - 15h
+            create_child("Bob", 540, 960),     // 9h - 16h
+            create_child("Charlie", 600, 1020), // 10h - 17h
+            create_child("David", 660, 1080),   // 11h - 18h
+            create_child("Eve", 720, 1140),     // 12h - 19h
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        // Il devrait y avoir des shifts car il y a des enfants
+        assert!(!result.is_empty());
+
+        // Vérifier que les shifts couvrent toute la période de présence des enfants
+        let earliest_start = result.iter()
+            .flat_map(|s| s.heures.iter())
+            .map(|r| r.arrivee)
+            .min()
+            .unwrap_or(0);
+        let latest_end = result.iter()
+            .flat_map(|s| s.heures.iter())
+            .map(|r| r.depart)
+            .max()
+            .unwrap_or(0);
+
+        assert_eq!(earliest_start, 480); // Premier enfant arrive à 8h
+        assert_eq!(latest_end, 1140);    // Dernier enfant part à 19h
+    }
+}
