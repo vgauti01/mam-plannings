@@ -1,4 +1,11 @@
-import React, { useRef, useState, useMemo, useCallback } from "react";
+import React, {
+  useRef,
+  useState,
+  useMemo,
+  useCallback,
+  createContext,
+  useContext,
+} from "react";
 import {
   AreaChart,
   Area,
@@ -16,8 +23,22 @@ import {
   TimeRange,
 } from "../../types";
 import { minutesToTime } from "../../utils/formatters";
-import { LuX } from "react-icons/lu";
+import { LuX, LuGripVertical } from "react-icons/lu";
 import "./TimelineEditor.css";
+
+// Contexte pour le drag inter-AM
+interface CrossDragData {
+  range: TimeRange;
+  sourceAmId: number;
+  rangeIndex: number;
+}
+
+interface CrossDragContextType {
+  draggedData: CrossDragData | null;
+  setDraggedData: (data: CrossDragData | null) => void;
+}
+
+const CrossDragContext = createContext<CrossDragContextType | null>(null);
 
 interface Props {
   enfants: Child[];
@@ -212,6 +233,11 @@ interface ShiftTimelineProps {
   shift: AssistantShift;
   profile: AssistantProfile | undefined;
   onRangeChange: (newRanges: TimeRange[]) => void;
+  onCrossTransfer: (
+    sourceAmId: number,
+    sourceRangeIndex: number,
+    range: TimeRange
+  ) => void;
   containerWidth: number;
 }
 
@@ -219,8 +245,11 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
   shift,
   profile,
   onRangeChange,
+  onCrossTransfer,
   containerWidth,
 }) => {
+  const crossDragCtx = useContext(CrossDragContext);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [dragState, setDragState] = useState<{
     rangeIndex: number;
     type: "move" | "resize-left" | "resize-right";
@@ -336,6 +365,70 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
     [shift.heures, onRangeChange]
   );
 
+  // --- Drag inter-AM ---
+  const handleCrossDragStart = useCallback(
+    (e: React.DragEvent, rangeIndex: number) => {
+      if (!crossDragCtx) return;
+      const range = shift.heures[rangeIndex];
+      crossDragCtx.setDraggedData({
+        range: { ...range },
+        sourceAmId: shift.am_id,
+        rangeIndex,
+      });
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", JSON.stringify(range));
+    },
+    [crossDragCtx, shift.heures, shift.am_id]
+  );
+
+  const handleCrossDragEnd = useCallback(() => {
+    if (!crossDragCtx) return;
+    crossDragCtx.setDraggedData(null);
+    setIsDragOver(false);
+  }, [crossDragCtx]);
+
+  const handleTrackDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+
+      // Ne pas montrer le feedback si on est sur la même timeline source
+      if (crossDragCtx?.draggedData?.sourceAmId === shift.am_id) {
+        setIsDragOver(false);
+        return;
+      }
+
+      if (crossDragCtx?.draggedData) {
+        setIsDragOver(true);
+      }
+    },
+    [crossDragCtx, shift.am_id]
+  );
+
+  const handleTrackDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  const handleTrackDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+
+      if (!crossDragCtx?.draggedData) return;
+
+      const { range, sourceAmId, rangeIndex } = crossDragCtx.draggedData;
+
+      // Ne pas accepter le drop sur la même timeline
+      if (sourceAmId === shift.am_id) return;
+
+      // Transférer la plage vers cette timeline
+      onCrossTransfer(sourceAmId, rangeIndex, range);
+
+      crossDragCtx.setDraggedData(null);
+    },
+    [crossDragCtx, shift.am_id, onCrossTransfer]
+  );
+
   // Attacher/détacher les événements globaux
   React.useEffect(() => {
     if (dragState) {
@@ -357,7 +450,13 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
       <div className="shift-timeline-label" style={{ borderLeftColor: color }}>
         {name}
       </div>
-      <div className="shift-timeline-track" onClick={handleTrackClick}>
+      <div
+        className={`shift-timeline-track ${isDragOver ? "drag-over" : ""}`}
+        onClick={handleTrackClick}
+        onDragOver={handleTrackDragOver}
+        onDragLeave={handleTrackDragLeave}
+        onDrop={handleTrackDrop}
+      >
         {isEmpty && (
           <span className="empty-hint">Cliquer pour ajouter un horaire</span>
         )}
@@ -366,11 +465,14 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
           const width = minutesToPixels(range.depart) - left;
           const isNarrow = width < 80; // Plage trop étroite pour afficher le texte
           const timeLabel = `${minutesToTime(range.arrivee)} - ${minutesToTime(range.depart)}`;
+          const isCrossDragging =
+            crossDragCtx?.draggedData?.sourceAmId === shift.am_id &&
+            crossDragCtx?.draggedData?.rangeIndex === idx;
 
           return (
             <div
               key={idx}
-              className={`shift-block ${dragState?.rangeIndex === idx ? "dragging" : ""} ${isNarrow ? "narrow" : ""}`}
+              className={`shift-block ${dragState?.rangeIndex === idx ? "dragging" : ""} ${isNarrow ? "narrow" : ""} ${isCrossDragging ? "cross-dragging" : ""}`}
               style={{
                 left: `${left}px`,
                 width: `${width}px`,
@@ -378,6 +480,16 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
               }}
               title={timeLabel}
             >
+              {/* Poignée de transfert inter-AM */}
+              <div
+                className="transfer-handle"
+                draggable
+                onDragStart={(e) => handleCrossDragStart(e, idx)}
+                onDragEnd={handleCrossDragEnd}
+                title="Glisser vers une autre AM"
+              >
+                <LuGripVertical size={14} />
+              </div>
               {/* Poignée gauche */}
               <div
                 className="resize-handle resize-left"
@@ -426,6 +538,39 @@ export const TimelineEditor: React.FC<Props> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
+  // État pour le drag inter-AM
+  const [crossDraggedData, setCrossDraggedData] =
+    useState<CrossDragData | null>(null);
+
+  // Callback pour transférer une plage d'un AM vers un autre
+  const handleCrossTransfer = useCallback(
+    (
+      targetAmId: number,
+      sourceAmId: number,
+      sourceRangeIndex: number,
+      range: TimeRange
+    ) => {
+      // 1. Retirer la plage de l'AM source
+      const sourceShift = shifts.find((s) => s.am_id === sourceAmId);
+      if (sourceShift) {
+        const newSourceRanges = sourceShift.heures.filter(
+          (_, idx) => idx !== sourceRangeIndex
+        );
+        onShiftChange(sourceAmId, newSourceRanges);
+      }
+
+      // 2. Ajouter la plage à l'AM destination (avec fusion si chevauchement)
+      const targetShift = shifts.find((s) => s.am_id === targetAmId);
+      const existingRanges = targetShift?.heures || [];
+      const newTargetRanges = mergeOverlappingRanges([
+        ...existingRanges,
+        range,
+      ]);
+      onShiftChange(targetAmId, newTargetRanges);
+    },
+    [shifts, onShiftChange]
+  );
+
   // Calculer les données de présence
   const presenceData = useMemo(
     () => calculatePresenceData(enfants, shifts, ratio),
@@ -472,160 +617,184 @@ export const TimelineEditor: React.FC<Props> = ({
   }, []);
 
   return (
-    <div className="timeline-editor" ref={containerRef}>
-      {/* Graphique de présence enfants avec capacité */}
-      <div className="presence-chart">
-        <div className="chart-label">
-          <span className="chart-label-title">Enfants</span>
-          <span className="chart-label-ratio">ratio: {ratio}</span>
-        </div>
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height={120}>
-            <AreaChart
-              data={presenceData}
-              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-            >
-              <defs>
-                {/* Gradient pour les enfants */}
-                <linearGradient id="colorEnfants" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366F1" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#6366F1" stopOpacity={0.2} />
-                </linearGradient>
-                {/* Gradient pour la surcharge (rouge) */}
-                <linearGradient id="colorSurcharge" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#EF4444" stopOpacity={0.9} />
-                  <stop offset="95%" stopColor="#EF4444" stopOpacity={0.3} />
-                </linearGradient>
-              </defs>
+    <CrossDragContext.Provider
+      value={{
+        draggedData: crossDraggedData,
+        setDraggedData: setCrossDraggedData,
+      }}
+    >
+      <div className="timeline-editor" ref={containerRef}>
+        {/* Graphique de présence enfants avec capacité */}
+        <div className="presence-chart">
+          <div className="chart-label">
+            <span className="chart-label-title">Enfants</span>
+            <span className="chart-label-ratio">ratio: {ratio}</span>
+          </div>
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height={120}>
+              <AreaChart
+                data={presenceData}
+                margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+              >
+                <defs>
+                  {/* Gradient pour les enfants */}
+                  <linearGradient id="colorEnfants" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0.2} />
+                  </linearGradient>
+                  {/* Gradient pour la surcharge (rouge) */}
+                  <linearGradient
+                    id="colorSurcharge"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.9} />
+                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0.3} />
+                  </linearGradient>
+                </defs>
 
-              {/* Axe X avec les heures */}
-              <XAxis
-                dataKey="time"
-                type="number"
-                domain={[DAY_START, DAY_END]}
-                ticks={Array.from({ length: 14 }, (_, i) => DAY_START + i * 60)}
-                tickFormatter={(value) => `${Math.floor(value / 60)}h`}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 10, fill: "#9CA3AF" }}
-                height={20}
-              />
-
-              {/* Axe Y avec divisions par ratio */}
-              <YAxis
-                domain={[0, maxY]}
-                ticks={yTicks}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 10, fill: "#6B7280" }}
-                width={30}
-              />
-
-              {/* Tooltip personnalisé */}
-              <Tooltip content={<CustomTooltip />} />
-
-              {/* Ligne de référence pour chaque palier de ratio */}
-              {yTicks.map((tick) => (
-                <ReferenceLine
-                  key={tick}
-                  y={tick}
-                  stroke={tick > 0 ? "#E5E7EB" : "transparent"}
-                  strokeDasharray="3 3"
+                {/* Axe X avec les heures */}
+                <XAxis
+                  dataKey="time"
+                  type="number"
+                  domain={[DAY_START, DAY_END]}
+                  ticks={Array.from(
+                    { length: 14 },
+                    (_, i) => DAY_START + i * 60
+                  )}
+                  tickFormatter={(value) => `${Math.floor(value / 60)}h`}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fill: "#9CA3AF" }}
+                  height={20}
                 />
-              ))}
 
-              {/* Zones de surcharge en fond rouge */}
-              {overloadZones.map((zone, idx) => (
-                <ReferenceArea
-                  key={idx}
-                  x1={zone.start}
-                  x2={zone.end}
-                  fill="#FEE2E2"
-                  fillOpacity={0.5}
+                {/* Axe Y avec divisions par ratio */}
+                <YAxis
+                  domain={[0, maxY]}
+                  ticks={yTicks}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fill: "#6B7280" }}
+                  width={30}
                 />
-              ))}
 
-              {/* Ligne de capacité (nb AM * ratio) */}
-              <Area
-                type="stepAfter"
-                dataKey="capacite"
-                stroke="#10B981"
-                strokeWidth={2}
-                strokeDasharray="4 2"
-                fill="none"
-                isAnimationActive={false}
-              />
+                {/* Tooltip personnalisé */}
+                <Tooltip content={<CustomTooltip />} />
 
-              {/* Aire des enfants */}
-              <Area
-                type="stepAfter"
-                dataKey="enfants"
-                stroke="#6366F1"
-                strokeWidth={2}
-                fill="url(#colorEnfants)"
-                isAnimationActive={false}
-              />
+                {/* Ligne de référence pour chaque palier de ratio */}
+                {yTicks.map((tick) => (
+                  <ReferenceLine
+                    key={tick}
+                    y={tick}
+                    stroke={tick > 0 ? "#E5E7EB" : "transparent"}
+                    strokeDasharray="3 3"
+                  />
+                ))}
 
-              {/* Surcharge (partie qui dépasse) */}
-              <Area
-                type="stepAfter"
-                dataKey="surcharge"
-                stroke="#EF4444"
-                strokeWidth={0}
-                fill="url(#colorSurcharge)"
-                isAnimationActive={false}
-                baseValue={0}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+                {/* Zones de surcharge en fond rouge */}
+                {overloadZones.map((zone, idx) => (
+                  <ReferenceArea
+                    key={idx}
+                    x1={zone.start}
+                    x2={zone.end}
+                    fill="#FEE2E2"
+                    fillOpacity={0.5}
+                  />
+                ))}
+
+                {/* Ligne de capacité (nb AM * ratio) */}
+                <Area
+                  type="stepAfter"
+                  dataKey="capacite"
+                  stroke="#10B981"
+                  strokeWidth={2}
+                  strokeDasharray="4 2"
+                  fill="none"
+                  isAnimationActive={false}
+                />
+
+                {/* Aire des enfants */}
+                <Area
+                  type="stepAfter"
+                  dataKey="enfants"
+                  stroke="#6366F1"
+                  strokeWidth={2}
+                  fill="url(#colorEnfants)"
+                  isAnimationActive={false}
+                />
+
+                {/* Surcharge (partie qui dépasse) */}
+                <Area
+                  type="stepAfter"
+                  dataKey="surcharge"
+                  stroke="#EF4444"
+                  strokeWidth={0}
+                  fill="url(#colorSurcharge)"
+                  isAnimationActive={false}
+                  baseValue={0}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-      </div>
 
-      {/* Légende */}
-      <div className="chart-legend">
-        <div className="legend-item">
-          <span
-            className="legend-color"
-            style={{ backgroundColor: "#6366F1" }}
-          />
-          <span>Enfants présents</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-line" style={{ borderColor: "#10B981" }} />
-          <span>Capacité (AM × {ratio})</span>
-        </div>
-        <div className="legend-item legend-warning">
-          <span
-            className="legend-color"
-            style={{ backgroundColor: "#EF4444" }}
-          />
-          <span>Surcharge</span>
-        </div>
-      </div>
-
-      {/* Timelines des AM */}
-      <div className="shifts-container">
-        {team.map((profile) => {
-          // Trouver le shift existant pour cet AM, ou créer un shift vide
-          const existingShift = shifts.find((s) => s.am_id === profile.id);
-          const shift: AssistantShift = existingShift || {
-            am_id: profile.id,
-            heures: [],
-          };
-
-          return (
-            <ShiftTimeline
-              key={profile.id}
-              shift={shift}
-              profile={profile}
-              onRangeChange={(newRanges) =>
-                onShiftChange(profile.id, newRanges)
-              }
-              containerWidth={containerWidth}
+        {/* Légende */}
+        <div className="chart-legend">
+          <div className="legend-item">
+            <span
+              className="legend-color"
+              style={{ backgroundColor: "#6366F1" }}
             />
-          );
-        })}
+            <span>Enfants présents</span>
+          </div>
+          <div className="legend-item">
+            <span className="legend-line" style={{ borderColor: "#10B981" }} />
+            <span>Capacité (AM × {ratio})</span>
+          </div>
+          <div className="legend-item legend-warning">
+            <span
+              className="legend-color"
+              style={{ backgroundColor: "#EF4444" }}
+            />
+            <span>Surcharge</span>
+          </div>
+        </div>
+
+        {/* Timelines des AM */}
+        <div className="shifts-container">
+          {team.map((profile) => {
+            // Trouver le shift existant pour cet AM, ou créer un shift vide
+            const existingShift = shifts.find((s) => s.am_id === profile.id);
+            const shift: AssistantShift = existingShift || {
+              am_id: profile.id,
+              heures: [],
+            };
+
+            return (
+              <ShiftTimeline
+                key={profile.id}
+                shift={shift}
+                profile={profile}
+                onRangeChange={(newRanges) =>
+                  onShiftChange(profile.id, newRanges)
+                }
+                onCrossTransfer={(sourceAmId, sourceRangeIndex, range) =>
+                  handleCrossTransfer(
+                    profile.id,
+                    sourceAmId,
+                    sourceRangeIndex,
+                    range
+                  )
+                }
+                containerWidth={containerWidth}
+              />
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </CrossDragContext.Provider>
   );
 };

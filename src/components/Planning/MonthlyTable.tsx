@@ -6,6 +6,7 @@ import {
   minutesToTime,
   formatDuration,
 } from "../../utils/formatters";
+import { hasDaySurcharge } from "../../utils/presenceCalculator";
 import { TimelineEditor } from "./TimelineEditor";
 import "./MonthlyTable.css";
 
@@ -23,20 +24,6 @@ interface Props {
  */
 const getShiftTotalMinutes = (heures: TimeRange[]): number => {
   return heures.reduce((acc, range) => acc + (range.depart - range.arrivee), 0);
-};
-
-/**
- * Formate les horaires d'un shift pour l'affichage
- */
-const formatShiftHours = (heures: TimeRange[]): string => {
-  if (heures.length === 0) return "";
-  if (heures.length === 1) {
-    return `${minutesToTime(heures[0].arrivee)} - ${minutesToTime(heures[0].depart)}`;
-  }
-  // Si plusieurs plages, afficher la première et dernière heure
-  const firstStart = Math.min(...heures.map((h) => h.arrivee));
-  const lastEnd = Math.max(...heures.map((h) => h.depart));
-  return `${minutesToTime(firstStart)} - ${minutesToTime(lastEnd)}`;
 };
 
 export const MonthlyTable = ({
@@ -175,6 +162,14 @@ export const MonthlyTable = ({
                     onClick={() => onDayClick(day)}
                   >
                     <div className="date-content">
+                      {hasDaySurcharge(day.enfants, day.am, day.ratio || 4) && (
+                        <span
+                          className="overload-badge"
+                          title="Manque d'AM sur ce créneau"
+                        >
+                          ⚠️
+                        </span>
+                      )}
                       <span className="day-name">
                         {formatDayLabel(day.date).split(" ")[0]}
                       </span>
@@ -214,8 +209,20 @@ export const MonthlyTable = ({
                         }}
                       >
                         {hasShift && (
-                          <div className="shift-pill">
-                            {formatShiftHours(shift.heures)}
+                          <div className="shift-pills-container">
+                            {shift.heures
+                              .slice()
+                              .sort((a, b) => a.arrivee - b.arrivee)
+                              .map((h, i) => (
+                                <div
+                                  key={i}
+                                  className="shift-pill"
+                                  title={`${minutesToTime(h.arrivee)} - ${minutesToTime(h.depart)}`}
+                                >
+                                  {minutesToTime(h.arrivee)}-
+                                  {minutesToTime(h.depart)}
+                                </div>
+                              ))}
                           </div>
                         )}
                         {/* Aide visuelle au survol lors du drag */}

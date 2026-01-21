@@ -7,6 +7,7 @@ import {
   LuUsers,
   LuClock,
   LuTriangleAlert,
+  LuPlus,
 } from "react-icons/lu";
 import { useState, useMemo } from "react";
 
@@ -15,6 +16,7 @@ interface Props {
   onDeleteChild: (date: string, name: string) => void;
   onDeleteDay: () => void;
   onUpdateRatio?: (ratio: number) => void;
+  onAddChild?: (name: string, start: string, end: string) => void;
 }
 
 export const DayTable = ({
@@ -22,10 +24,16 @@ export const DayTable = ({
   onDeleteChild,
   onDeleteDay,
   onUpdateRatio,
+  onAddChild,
 }: Props) => {
   const [enfants, setEnfants] = useState<Child[]>(day.enfants);
   const [ratio, setRatio] = useState<number>(day.ratio);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // État du formulaire d'ajout d'enfant
+  const [newChildName, setNewChildName] = useState("");
+  const [newStart, setNewStart] = useState("08h00");
+  const [newEnd, setNewEnd] = useState("17h00");
 
   const handleDeleteChild = (name: string) => {
     if (!enfants) return;
@@ -38,6 +46,23 @@ export const DayTable = ({
     if (newRatio < 1 || newRatio > 10) return;
     setRatio(newRatio);
     onUpdateRatio?.(newRatio);
+  };
+
+  const handleAddChild = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newChildName.trim() || !onAddChild) return;
+    onAddChild(newChildName.trim(), newStart, newEnd);
+    // Ajout optimiste à la liste locale
+    const newChild: Child = {
+      nom: newChildName.trim(),
+      heures: [], // La vraie plage sera ajoutée côté backend
+    };
+    // On vérifie si l'enfant existe déjà (fusion des plages)
+    const existingChild = enfants.find((c) => c.nom === newChildName.trim());
+    if (!existingChild) {
+      setEnfants([...enfants, newChild]);
+    }
+    setNewChildName("");
   };
 
   // Statistiques du jour
@@ -160,6 +185,51 @@ export const DayTable = ({
           </div>
         )}
       </div>
+
+      {/* Formulaire ajout enfant */}
+      {onAddChild && (
+        <div className="add-child-section">
+          <h4 className="section-title">
+            <LuPlus size={16} />
+            Ajouter un enfant
+          </h4>
+          <form onSubmit={handleAddChild} className="add-child-form">
+            <input
+              type="text"
+              placeholder="Nom de l'enfant"
+              value={newChildName}
+              onChange={(e) => setNewChildName(e.target.value)}
+              className="input-name"
+              required
+            />
+            <div className="time-inputs">
+              <input
+                type="text"
+                placeholder="08h00"
+                value={newStart}
+                onChange={(e) => setNewStart(e.target.value)}
+                pattern="\d{1,2}h\d{2}"
+                title="Format: 08h00"
+                className="input-time"
+              />
+              <span className="time-separator">→</span>
+              <input
+                type="text"
+                placeholder="17h00"
+                value={newEnd}
+                onChange={(e) => setNewEnd(e.target.value)}
+                pattern="\d{1,2}h\d{2}"
+                title="Format: 17h00"
+                className="input-time"
+              />
+            </div>
+            <button type="submit" className="btn-add-child">
+              <LuPlus size={16} />
+              Ajouter
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* Zone de danger */}
       <div className="danger-zone">

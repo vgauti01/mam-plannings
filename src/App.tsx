@@ -2,8 +2,7 @@ import { useState } from "react";
 import { usePlanning } from "./hooks/usePlanning";
 import { MonthlyTable } from "./components/Planning/MonthlyTable";
 import { MonthNavigation } from "./components/MonthNavigation";
-import { AddEntryForm } from "./components/Planning/AddEntryForm";
-import { DayTable } from "./components/Planning/DayTable"; // On réutilise ton ancien composant !
+import { DayTable } from "./components/Planning/DayTable";
 import { Modal } from "./components/ui/Modal";
 import { Day } from "./types";
 import "./App.css";
@@ -78,9 +77,6 @@ function App() {
       {/* NAVIGATION MOIS ( < Novembre > ) */}
       <MonthNavigation currentDate={currentMonth} onChange={setCurrentMonth} />
 
-      {/* FORMULAIRE AJOUT ENTRÉE */}
-      <AddEntryForm onAdd={handleAddEntry} />
-
       {/* TABLEAU MENSUEL */}
       <main className="planning-board">
         {loading ? (
@@ -129,6 +125,9 @@ function App() {
             }}
             onUpdateRatio={(ratio) => {
               void handleUpdateRatio(selectedDay.date, ratio);
+            }}
+            onAddChild={(name, start, end) => {
+              void handleAddEntry(selectedDay.date, name, start, end);
             }}
           />
         )}
