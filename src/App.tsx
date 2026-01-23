@@ -3,6 +3,7 @@ import { usePlanning } from "./hooks/usePlanning";
 import { MonthlyTable } from "./components/Planning/MonthlyTable";
 import { MonthNavigation } from "./components/MonthNavigation";
 import { DayTable } from "./components/Planning/DayTable";
+import { AddEntryForm } from "./components/Planning/AddEntryForm";
 import { Modal } from "./components/ui/Modal";
 import { Day } from "./types";
 import "./App.css";
@@ -82,6 +83,18 @@ function App() {
 
       {/* NAVIGATION MOIS ( < Novembre > ) */}
       <MonthNavigation currentDate={currentMonth} onChange={setCurrentMonth} />
+
+      {/* FORMULAIRE AJOUT RAPIDE */}
+      <AddEntryForm
+        onAdd={(date, name, start, end) => {
+          void handleAddEntry(date, name, start, end);
+          // Naviguer vers le mois de la date ajoutée
+          const addedDate = new Date(date);
+          if (!isNaN(addedDate.getTime())) {
+            setCurrentMonth(addedDate);
+          }
+        }}
+      />
 
       {/* TABLEAU MENSUEL */}
       <main className="planning-board">

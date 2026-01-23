@@ -257,6 +257,99 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
     originalRange: TimeRange;
   } | null>(null);
 
+  // État pour l'édition directe des horaires
+  const [editingRange, setEditingRange] = useState<{
+    index: number;
+    arrivee: string;
+    depart: string;
+  } | null>(null);
+
+  // Parser le format HHhMM en minutes
+  const parseTimeToMinutes = useCallback((timeStr: string): number | null => {
+    const match = timeStr.match(/^(\d{1,2})h(\d{2})$/);
+    if (!match) return null;
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  }, []);
+
+  // Démarrer l'édition d'une plage
+  const handleStartEdit = useCallback((e: React.MouseEvent, rangeIndex: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const range = shift.heures[rangeIndex];
+    setEditingRange({
+      index: rangeIndex,
+      arrivee: minutesToTime(range.arrivee),
+      depart: minutesToTime(range.depart),
+    });
+  }, [shift.heures]);
+
+  // Valider et appliquer les changements
+  const handleConfirmEdit = useCallback(() => {
+    if (!editingRange) return;
+
+    const arriveeMinutes = parseTimeToMinutes(editingRange.arrivee);
+    const departMinutes = parseTimeToMinutes(editingRange.depart);
+
+    if (arriveeMinutes === null || departMinutes === null) {
+      // Format invalide, annuler
+      setEditingRange(null);
+      return;
+    }
+
+    if (arriveeMinutes >= departMinutes) {
+      // Heure de début >= heure de fin, annuler
+      setEditingRange(null);
+      return;
+    }
+
+    // Limiter aux bornes de la journée
+    const clampedArrivee = Math.max(DAY_START, Math.min(DAY_END, arriveeMinutes));
+    const clampedDepart = Math.max(DAY_START, Math.min(DAY_END, departMinutes));
+
+    const newRanges = [...shift.heures];
+    newRanges[editingRange.index] = {
+      arrivee: clampedArrivee,
+      depart: clampedDepart,
+    };
+
+    // Fusionner si chevauchement
+    const merged = mergeOverlappingRanges(newRanges);
+    onRangeChange(merged);
+    setEditingRange(null);
+  }, [editingRange, parseTimeToMinutes, shift.heures, onRangeChange]);
+
+  // Annuler l'édition
+  const handleCancelEdit = useCallback(() => {
+    setEditingRange(null);
+  }, []);
+
+  // Gérer les touches clavier dans les inputs
+  const handleEditKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleConfirmEdit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      handleCancelEdit();
+    }
+  }, [handleConfirmEdit, handleCancelEdit]);
+
+  // Gérer le blur avec délai pour permettre le passage entre inputs
+  const handleEditBlur = useCallback((e: React.FocusEvent) => {
+    // Vérifier si le focus passe à un autre élément dans la même zone d'édition
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    if (relatedTarget?.closest('.shift-time-edit')) {
+      return; // Ne pas confirmer si on passe à l'autre input
+    }
+    // Petit délai pour laisser le temps au clic de se propager
+    setTimeout(() => {
+      handleConfirmEdit();
+    }, 150);
+  }, [handleConfirmEdit]);
+
   const minutesToPixels = useCallback(
     (minutes: number) =>
       ((minutes - DAY_START) / TOTAL_MINUTES) * containerWidth,
@@ -270,6 +363,8 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    // Annuler l'édition en cours si on commence à drag
+    setEditingRange(null);
     setDragState({
       rangeIndex,
       type,
@@ -359,6 +454,8 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
   const handleDeleteRange = useCallback(
     (e: React.MouseEvent, rangeIndex: number) => {
       e.stopPropagation(); // Empêcher le clic de se propager à la track
+      // Annuler l'édition en cours
+      setEditingRange(null);
       const newRanges = shift.heures.filter((_, idx) => idx !== rangeIndex);
       onRangeChange(newRanges);
     },
@@ -369,6 +466,8 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
   const handleCrossDragStart = useCallback(
     (e: React.DragEvent, rangeIndex: number) => {
       if (!crossDragCtx) return;
+      // Annuler l'édition en cours
+      setEditingRange(null);
       const range = shift.heures[rangeIndex];
       crossDragCtx.setDraggedData({
         range: { ...range },
@@ -493,7 +592,11 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
               {/* Zone centrale - déplacement */}
               <div
                 className="shift-block-content"
-                onMouseDown={(e) => handleMouseDown(e, idx, "move")}
+                onMouseDown={(e) => {
+                  // Ne pas démarrer le drag si on est en mode édition
+                  if (editingRange?.index === idx) return;
+                  handleMouseDown(e, idx, "move");
+                }}
               >
                 {!isNarrow && (
                   <>
@@ -508,7 +611,39 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
                     >
                       <LuGripVertical size={14} />
                     </div>
-                    <span className="shift-time-label">{timeLabel}</span>
+                    {/* Label éditable */}
+                    {editingRange?.index === idx ? (
+                      <div className="shift-time-edit" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          className="time-input"
+                          value={editingRange.arrivee}
+                          onChange={(e) => setEditingRange({ ...editingRange, arrivee: e.target.value })}
+                          onKeyDown={handleEditKeyDown}
+                          onBlur={handleEditBlur}
+                          autoFocus
+                          placeholder="08h00"
+                        />
+                        <span className="time-separator">-</span>
+                        <input
+                          type="text"
+                          className="time-input"
+                          value={editingRange.depart}
+                          onChange={(e) => setEditingRange({ ...editingRange, depart: e.target.value })}
+                          onKeyDown={handleEditKeyDown}
+                          onBlur={handleEditBlur}
+                          placeholder="17h00"
+                        />
+                      </div>
+                    ) : (
+                      <span
+                        className="shift-time-label editable"
+                        onClick={(e) => handleStartEdit(e, idx)}
+                        title="Cliquer pour modifier"
+                      >
+                        {timeLabel}
+                      </span>
+                    )}
                   </>
                 )}
                 {isNarrow && (

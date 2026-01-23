@@ -1,6 +1,6 @@
 [package]
 name = "mam-plannings"
-version = "1.0.0"
+version = "1.5.0"
 description = "Application for managing MAM plannings"
 authors = ["Victor Gautier"]
 edition = "2021"

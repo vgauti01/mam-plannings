@@ -159,7 +159,7 @@ export const MonthlyTable = ({
       <EmptyState
         icon={<LuCalendar size={32} />}
         title="Aucun planning pour ce mois"
-        description="Importez un fichier PDF ou ajoutez manuellement des entrées pour commencer à planifier."
+        description="Importez un fichier PDF ou utilisez le formulaire d'ajout rapide ci-dessus pour ajouter un enfant."
       />
     );
   }
@@ -181,6 +181,7 @@ export const MonthlyTable = ({
           {monthDays.map((day) => {
             const isExpanded = expandedDays.has(day.date);
             const hasShifts = day.am.length > 0;
+            const hasContent = hasShifts || day.enfants.length > 0;
 
             return (
               <React.Fragment key={day.date}>
@@ -232,7 +233,7 @@ export const MonthlyTable = ({
                         onDragLeave={handleDragLeave}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (hasShifts) {
+                          if (hasContent) {
                             toggleExpand(day.date);
                           }
                         }}

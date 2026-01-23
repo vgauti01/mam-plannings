@@ -304,7 +304,50 @@
   color: white;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   white-space: nowrap;
-  pointer-events: none;
+}
+
+.shift-time-label.editable {
+  pointer-events: auto;
+  cursor: text;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.shift-time-label.editable:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Formulaire d'édition des horaires */
+.shift-time-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.shift-time-edit .time-input {
+  width: 50px;
+  padding: 2px 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #374151;
+  outline: none;
+}
+
+.shift-time-edit .time-input:focus {
+  border-color: white;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.shift-time-edit .time-separator {
+  color: white;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* Plages étroites */
