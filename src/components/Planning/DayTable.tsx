@@ -9,7 +9,7 @@ import {
   LuTriangleAlert,
   LuPlus,
 } from "react-icons/lu";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 interface Props {
   day: Day;
@@ -29,6 +29,12 @@ export const DayTable = ({
   const [enfants, setEnfants] = useState<Child[]>(day.enfants);
   const [ratio, setRatio] = useState<number>(day.ratio);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Synchroniser l'état local avec les props quand day change
+  useEffect(() => {
+    setEnfants(day.enfants);
+    setRatio(day.ratio);
+  }, [day]);
 
   // État du formulaire d'ajout d'enfant
   const [newChildName, setNewChildName] = useState("");
@@ -52,16 +58,6 @@ export const DayTable = ({
     e.preventDefault();
     if (!newChildName.trim() || !onAddChild) return;
     onAddChild(newChildName.trim(), newStart, newEnd);
-    // Ajout optimiste à la liste locale
-    const newChild: Child = {
-      nom: newChildName.trim(),
-      heures: [], // La vraie plage sera ajoutée côté backend
-    };
-    // On vérifie si l'enfant existe déjà (fusion des plages)
-    const existingChild = enfants.find((c) => c.nom === newChildName.trim());
-    if (!existingChild) {
-      setEnfants([...enfants, newChild]);
-    }
     setNewChildName("");
   };
 

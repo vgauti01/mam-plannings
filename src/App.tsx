@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePlanning } from "./hooks/usePlanning";
 import { MonthlyTable } from "./components/Planning/MonthlyTable";
 import { MonthNavigation } from "./components/MonthNavigation";
@@ -44,6 +44,16 @@ function App() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Day | null>(null);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+
+  // Synchroniser selectedDay avec days quand days change
+  useEffect(() => {
+    if (selectedDay) {
+      const updatedDay = days.find((d) => d.date === selectedDay.date);
+      if (updatedDay) {
+        setSelectedDay(updatedDay);
+      }
+    }
+  }, [days, selectedDay]);
 
   // Fonction pour gérer l'export PDF
   const handleExportPdf = () => {

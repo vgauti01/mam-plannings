@@ -381,6 +381,11 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
     [crossDragCtx, shift.heures, shift.am_id]
   );
 
+  // Empêcher le mousedown sur la poignée de transfert de déclencher le drag de déplacement
+  const handleTransferMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+  }, []);
+
   const handleCrossDragEnd = useCallback(() => {
     if (!crossDragCtx) return;
     crossDragCtx.setDraggedData(null);
@@ -480,16 +485,6 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
               }}
               title={timeLabel}
             >
-              {/* Poignée de transfert inter-AM */}
-              <div
-                className="transfer-handle"
-                draggable
-                onDragStart={(e) => handleCrossDragStart(e, idx)}
-                onDragEnd={handleCrossDragEnd}
-                title="Glisser vers une autre AM"
-              >
-                <LuGripVertical size={14} />
-              </div>
               {/* Poignée gauche */}
               <div
                 className="resize-handle resize-left"
@@ -501,7 +496,33 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
                 onMouseDown={(e) => handleMouseDown(e, idx, "move")}
               >
                 {!isNarrow && (
-                  <span className="shift-time-label">{timeLabel}</span>
+                  <>
+                    {/* Poignée de transfert inter-AM (au centre) */}
+                    <div
+                      className="transfer-handle"
+                      draggable
+                      onMouseDown={handleTransferMouseDown}
+                      onDragStart={(e) => handleCrossDragStart(e, idx)}
+                      onDragEnd={handleCrossDragEnd}
+                      title="Glisser vers une autre AM"
+                    >
+                      <LuGripVertical size={14} />
+                    </div>
+                    <span className="shift-time-label">{timeLabel}</span>
+                  </>
+                )}
+                {isNarrow && (
+                  /* Poignée de transfert pour blocs étroits */
+                  <div
+                    className="transfer-handle"
+                    draggable
+                    onMouseDown={handleTransferMouseDown}
+                    onDragStart={(e) => handleCrossDragStart(e, idx)}
+                    onDragEnd={handleCrossDragEnd}
+                    title="Glisser vers une autre AM"
+                  >
+                    <LuGripVertical size={14} />
+                  </div>
                 )}
               </div>
               {/* Bouton de suppression */}

@@ -256,12 +256,8 @@
 
 /* Poignée de transfert inter-AM */
 .transfer-handle {
-  position: absolute;
-  left: -8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(0, 0, 0, 0.2);
@@ -271,7 +267,9 @@
   justify-content: center;
   color: #6b7280;
   opacity: 0;
-  transition: opacity 0.15s, transform 0.15s;
+  transition: opacity 0.15s, transform 0.15s, background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  margin-right: 6px;
   z-index: 15;
 }
 
@@ -282,7 +280,7 @@
 .transfer-handle:hover {
   background: white;
   color: #3b82f6;
-  transform: translateY(-50%) scale(1.1);
+  transform: scale(1.15);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
