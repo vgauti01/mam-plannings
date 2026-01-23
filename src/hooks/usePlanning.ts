@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { Day, TimeRange } from "../types";
 import { planningService } from "../services/planningService";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useToast } from "../contexts/ToastContext";
 
 /**
  * Type de retour du hook usePlanning.
@@ -51,9 +52,11 @@ interface UsePlanningReturn {
 export const usePlanning = (): UsePlanningReturn => {
   // États locaux
   const [days, setDays] = useState<Day[]>([]);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Toast notifications
+  const toast = useToast();
 
   /**
    * Charge le planning depuis le service.
@@ -99,6 +102,7 @@ export const usePlanning = (): UsePlanningReturn => {
       if (file) {
         // 2. DÉBUT DU CHARGEMENT
         setLoading(true);
+        setError(null); // Effacer l'erreur précédente
 
         const updated = await planningService.importPdf(
           file,
@@ -108,9 +112,12 @@ export const usePlanning = (): UsePlanningReturn => {
         );
 
         setDays(updated);
+        toast.success(`Planning importé avec succès (${updated.length} jours)`);
       }
     } catch (err) {
-      setError("Erreur import: " + String(err));
+      const errorMsg = String(err);
+      setError(errorMsg);
+      toast.error("Erreur lors de l'import du PDF");
     } finally {
       // 3. FIN DU CHARGEMENT (Quoi qu'il arrive, succès ou erreur)
       setLoading(false);
@@ -133,6 +140,7 @@ export const usePlanning = (): UsePlanningReturn => {
     end: string
   ): Promise<void> => {
     try {
+      setError(null);
       const updated = await planningService.addManualEntry(
         date,
         name,
@@ -140,8 +148,16 @@ export const usePlanning = (): UsePlanningReturn => {
         end
       );
       setDays(updated);
+      toast.success(`${name} ajouté(e) au planning`);
     } catch (err) {
-      setError(String(err));
+      const errorMsg = String(err);
+      // Message d'erreur plus clair pour la validation des horaires
+      if (errorMsg.includes("doit être avant")) {
+        toast.error("L'heure d'arrivée doit être avant l'heure de départ");
+      } else {
+        toast.error("Erreur lors de l'ajout de l'enfant");
+      }
+      setError(errorMsg);
     }
   };
 
@@ -157,10 +173,13 @@ export const usePlanning = (): UsePlanningReturn => {
     childName: string
   ): Promise<void> => {
     try {
+      setError(null);
       const updated = await planningService.removeChild(date, childName);
       setDays(updated);
+      toast.success(`${childName} retiré(e) du planning`);
     } catch (err) {
       setError(String(err));
+      toast.error("Erreur lors de la suppression");
     }
   };
 
@@ -172,10 +191,13 @@ export const usePlanning = (): UsePlanningReturn => {
    */
   const handleRemoveDay = async (date: string): Promise<void> => {
     try {
+      setError(null);
       const updated = await planningService.removeDay(date);
-      setDays(updated); // Met à jour la liste des jours
-    } catch (e) {
-      console.error(e);
+      setDays(updated);
+      toast.success("Journée supprimée");
+    } catch (err) {
+      setError(String(err));
+      toast.error("Erreur lors de la suppression du jour");
     }
   };
 
@@ -193,10 +215,13 @@ export const usePlanning = (): UsePlanningReturn => {
     id2: number
   ): Promise<void> => {
     try {
+      setError(null);
       const updated = await planningService.swapShifts(date, id1, id2);
       setDays(updated);
-    } catch (e) {
-      console.error(e);
+      toast.success("Shifts échangés");
+    } catch (err) {
+      setError(String(err));
+      toast.error("Erreur lors de l'échange");
     }
   };
 
@@ -213,14 +238,17 @@ export const usePlanning = (): UsePlanningReturn => {
     newRanges: TimeRange[]
   ): Promise<void> => {
     try {
+      setError(null);
       const updated = await planningService.updateAssistantShift(
         date,
         amId,
         newRanges
       );
       setDays(updated);
-    } catch (e) {
-      console.error(e);
+      // Pas de toast pour les mises à jour de shift (trop fréquent avec drag-drop)
+    } catch (err) {
+      setError(String(err));
+      toast.error("Erreur lors de la mise à jour du shift");
     }
   };
 
@@ -235,10 +263,13 @@ export const usePlanning = (): UsePlanningReturn => {
     ratio: number
   ): Promise<void> => {
     try {
+      setError(null);
       const updated = await planningService.updateDayRatio(date, ratio);
       setDays(updated);
-    } catch (e) {
-      console.error(e);
+      toast.info(`Ratio mis à jour: 1 AM pour ${ratio} enfants`);
+    } catch (err) {
+      setError(String(err));
+      toast.error("Erreur lors de la mise à jour du ratio");
     }
   };
 

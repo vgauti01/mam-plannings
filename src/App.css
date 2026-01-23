@@ -134,20 +134,6 @@ body {
   color: var(--gray-800);
 }
 
-/* === Bannière d'erreur === */
-.error-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-  color: #dc2626;
-  padding: 14px 20px;
-  border-radius: var(--radius-md);
-  margin-bottom: 20px;
-  border: 1px solid #fecaca;
-  font-weight: 500;
-}
-
 /* === Zone principale du planning === */
 .planning-board {
   background: white;

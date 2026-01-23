@@ -1,24 +1,66 @@
 use std::collections::HashMap;
-use std::error::Error;
 use regex::Regex;
 use crate::models::{AssistantProfile, Child, Day, TimeRange};
 use crate::utils::to_minutes_from_midnight;
 use crate::algorithm::compute_assistant_shifts;
+
+/// Erreurs possibles lors du parsing PDF
+#[derive(Debug)]
+pub enum ParseError {
+    /// Le fichier n'a pas pu être lu
+    FileNotFound(String),
+    /// Le fichier n'est pas un PDF valide ou est corrompu
+    InvalidPdf(String),
+    /// Le format du planning n'est pas reconnu
+    InvalidFormat(String),
+    /// Aucun jour n'a été trouvé dans le PDF
+    NoDaysFound,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::FileNotFound(path) => {
+                write!(f, "Fichier introuvable : {}", path)
+            }
+            ParseError::InvalidPdf(details) => {
+                write!(f, "Le fichier PDF est invalide ou corrompu : {}", details)
+            }
+            ParseError::InvalidFormat(details) => {
+                write!(f, "Format de planning non reconnu : {}", details)
+            }
+            ParseError::NoDaysFound => {
+                write!(f, "Aucun jour n'a été trouvé dans le PDF. Vérifiez que le fichier contient un planning au format attendu (LUN., MAR., etc.)")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 /// Parse un fichier PDF de planning et retourne une liste de jours avec les enfants et leurs horaires.
 /// # Arguments
 /// * `path` - Chemin vers le fichier PDF.
 /// * `year` - Année à utiliser pour les dates.
 /// # Returns
-/// * `Result<Vec<Day>, Box<dyn Error>>` - Liste des jours ou une erreur en cas d'échec.
-pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[AssistantProfile]) -> Result<Vec<Day>, Box<dyn Error>> {
+/// * `Result<Vec<Day>, ParseError>` - Liste des jours ou une erreur descriptive en cas d'échec.
+pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[AssistantProfile]) -> Result<Vec<Day>, ParseError> {
     // Lire le fichier PDF
-    let bytes = std::fs::read(path)?;
+    let bytes = std::fs::read(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ParseError::FileNotFound(path.to_string())
+        } else {
+            ParseError::FileNotFound(format!("{}: {}", path, e))
+        }
+    })?;
+
     // Extraire le texte du PDF
-    let parsed_text = pdf_extract::extract_text_from_mem(&bytes)?;
+    let parsed_text = pdf_extract::extract_text_from_mem(&bytes)
+        .map_err(|e| ParseError::InvalidPdf(e.to_string()))?;
 
     // Regex pour détecter les lignes de jour (ex: "LUN. 7/01")
-    let day_re = Regex::new(r"(LUN\.|MAR\.|MER\.|JEU\.|VEN\.)\s*(\d{1,2})/(\d{2})")?;
+    let day_re = Regex::new(r"(LUN\.|MAR\.|MER\.|JEU\.|VEN\.)\s*(\d{1,2})/(\d{2})")
+        .map_err(|e| ParseError::InvalidFormat(format!("Erreur regex interne: {}", e)))?;
 
     // Vecteur pour stocker les jours extraits
     let mut days: Vec<Day> = Vec::new();
@@ -41,14 +83,25 @@ pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[Assistant
                 let date = format!("{}-{:02}-{:02}", year, month, d_num);
                 let jour = map_day_name(abbr);
 
-                if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team)? {
+                if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team) {
                     days.push(day);
                 }
             }
             // Nouveau jour
             current_day_abbr = Some(caps[1].to_string());
-            current_day_num = Some(caps[2].parse()?);
-            current_month = Some(caps[3].parse()?);
+            current_day_num = Some(caps[2].parse().map_err(|_| {
+                ParseError::InvalidFormat(format!("Jour invalide: {}", &caps[2]))
+            })?);
+            let month: u32 = caps[3].parse().map_err(|_| {
+                ParseError::InvalidFormat(format!("Mois invalide: {}", &caps[3]))
+            })?;
+            // Validation du mois (1-12)
+            if month < 1 || month > 12 {
+                return Err(ParseError::InvalidFormat(format!(
+                    "Mois hors limites: {} (doit être entre 1 et 12)", month
+                )));
+            }
+            current_month = Some(month);
             current_lines.clear();
         } else { // Sinon, c'est une ligne d'enfant ou autre
             if current_day_num.is_some() {
@@ -62,11 +115,16 @@ pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[Assistant
         let date = format!("{}-{:02}-{:02}", year, month, d_num);
         let jour = map_day_name(abbr);
 
-        if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team)? {
+        if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team) {
             days.push(day);
         }
     }
-    
+
+    // Vérifier qu'on a trouvé au moins un jour
+    if days.is_empty() {
+        return Err(ParseError::NoDaysFound);
+    }
+
     Ok(days)
 }
 
@@ -93,20 +151,20 @@ fn map_day_name(abbr: &str) -> String {
 /// * `jour` - Nom du jour.
 /// * `lines` - Lignes associées au jour.
 /// # Returns
-/// * `Result<Option<Day>, Box<dyn Error>>` - Jour traité ou None s'il n'y a pas d'enfants ou une erreur en cas d'échec.
-fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team: &[AssistantProfile]) -> Result<Option<Day>, Box<dyn Error>> {
+/// * `Option<Day>` - Jour traité ou None s'il n'y a pas d'enfants.
+fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team: &[AssistantProfile]) -> Option<Day> {
     // Lignes du style "7h30 - 18h30 (11h)" -> à ignorer
     let global_hours_re =
-        Regex::new(r"^\s*\d{1,2}h\d{2}\s*-\s*\d{1,2}h\d{2}.*$")?;
+        Regex::new(r"^\s*\d{1,2}h\d{2}\s*-\s*\d{1,2}h\d{2}.*$").ok()?;
 
-    // Début d’une ligne enfant, ex: "Anna H. M.F. 8h00 - 8h30/16h30 - 18h00"
+    // Début d'une ligne enfant, ex: "Anna H. M.F. 8h00 - 8h30/16h30 - 18h00"
     let child_start_re = Regex::new(
         r"^[A-ZÉÈÀÂÇ][a-zA-Zéèêàâçïü\-]+(?:\s+[A-Z][a-zA-Zéèêàâçïü\-]+)?\s+[A-Z]\.",
-    )?;
+    ).ok()?;
 
     // "8h00 - 8h30" ou "16h30 - 18h00" etc.
     let time_range_re =
-        Regex::new(r"(\d{1,2})h(\d{2})\s*-\s*(\d{1,2})h(\d{2})")?;
+        Regex::new(r"(\d{1,2})h(\d{2})\s*-\s*(\d{1,2})h(\d{2})").ok()?;
 
     // Fusionner les lignes enfants qui sont sur plusieurs lignes
     let mut merged_child_lines: Vec<String> = Vec::new();
@@ -144,7 +202,7 @@ fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team:
     }
 
     // Si aucun enfant n'a été trouvé, retourner None
-    if children_map.is_empty() { return Ok(None); }
+    if children_map.is_empty() { return None; }
 
     // Convertir la map en vecteur trié d'enfants
     let mut enfants: Vec<Child> = children_map
@@ -157,13 +215,13 @@ fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team:
     let am_shifts = compute_assistant_shifts(&enfants, ratio, active_team);
 
     // Retourner le jour construit
-    Ok(Some(Day {
+    Some(Day {
         date: date.to_string(),
         jour: jour.to_string(),
         enfants,
         am: am_shifts,
         ratio,
-    }))
+    })
 }
 
 /// Analyse une ligne enfant pour extraire le nom et les plages horaires.
@@ -205,10 +263,12 @@ fn parse_child_line(raw: &str, time_range_re: &Regex) -> Option<(String, Vec<Tim
         let arrivee = format!("{:02}h{:02}", h1, m1);
         let depart = format!("{:02}h{:02}", h2, m2);
 
-        ranges.push(TimeRange {
-            arrivee: to_minutes_from_midnight(&arrivee),
-            depart: to_minutes_from_midnight(&depart),
-        });
+        let arrivee_min = to_minutes_from_midnight(&arrivee);
+        let depart_min = to_minutes_from_midnight(&depart);
+        // Validation basique : on ignore les plages invalides du PDF
+        if arrivee_min < depart_min && depart_min <= 1440 {
+            ranges.push(TimeRange::new_unchecked(arrivee_min, depart_min));
+        }
     }
 
     // Retourner le nom et les plages horaires si au moins une plage a été trouvée

@@ -23,7 +23,6 @@ function App() {
   const {
     days,
     loading,
-    error,
     handleImportPdf,
     handleDeleteChild,
     handleAddEntry,
@@ -80,9 +79,6 @@ function App() {
         handleExportPdf={handleExportPdf}
         handleExportExcel={handleExportExcel}
       />
-
-      {/* BANNIERE D'ERREUR */}
-      {error && <div className="error-banner">{error}</div>}
 
       {/* NAVIGATION MOIS ( < Novembre > ) */}
       <MonthNavigation currentDate={currentMonth} onChange={setCurrentMonth} />

@@ -25,12 +25,50 @@ pub struct AssistantProfile {
 }
 
 /// Plage horaire définie par une heure d'arrivée et une heure de départ
-/// Les heures sont représentées en minutes depuis minuit
+/// Les heures sont représentées en minutes depuis minuit (0-1440)
 /// Utilisée pour spécifier les horaires des enfants et des assistants maternels
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TimeRange {
-    pub arrivee: u16, // minutes
-    pub depart: u16,  // minutes
+    pub arrivee: u16, // minutes depuis minuit (0-1440)
+    pub depart: u16,  // minutes depuis minuit (0-1440)
+}
+
+impl TimeRange {
+    /// Crée une nouvelle plage horaire avec validation
+    /// # Arguments
+    /// * `arrivee` - Heure d'arrivée en minutes depuis minuit
+    /// * `depart` - Heure de départ en minutes depuis minuit
+    /// # Returns
+    /// * `Result<TimeRange, String>` - TimeRange valide ou message d'erreur
+    pub fn new(arrivee: u16, depart: u16) -> Result<Self, String> {
+        // Validation : les minutes doivent être dans la plage 0-1440 (24h)
+        if arrivee > 1440 {
+            return Err(format!(
+                "Heure d'arrivée invalide: {} minutes (max 1440)",
+                arrivee
+            ));
+        }
+        if depart > 1440 {
+            return Err(format!(
+                "Heure de départ invalide: {} minutes (max 1440)",
+                depart
+            ));
+        }
+        // Validation : l'arrivée doit être avant le départ
+        if arrivee >= depart {
+            return Err(format!(
+                "L'heure d'arrivée ({} min) doit être avant l'heure de départ ({} min)",
+                arrivee, depart
+            ));
+        }
+        Ok(TimeRange { arrivee, depart })
+    }
+
+    /// Crée une plage horaire sans validation (pour la désérialisation)
+    /// Utilisé uniquement pour les données existantes
+    pub fn new_unchecked(arrivee: u16, depart: u16) -> Self {
+        TimeRange { arrivee, depart }
+    }
 }
 
 /// Informations sur un enfant, incluant son nom et ses heures de présence
@@ -80,6 +118,55 @@ mod tests {
         let range: TimeRange = serde_json::from_str(json).unwrap();
         assert_eq!(range.arrivee, 480);
         assert_eq!(range.depart, 1020);
+    }
+
+    #[test]
+    fn test_time_range_new_valid() {
+        // 8h00 à 17h00 = 480 à 1020 minutes
+        let range = TimeRange::new(480, 1020);
+        assert!(range.is_ok());
+        let range = range.unwrap();
+        assert_eq!(range.arrivee, 480);
+        assert_eq!(range.depart, 1020);
+    }
+
+    #[test]
+    fn test_time_range_new_arrivee_after_depart() {
+        // Arrivée après départ = invalide
+        let range = TimeRange::new(1020, 480);
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("doit être avant"));
+    }
+
+    #[test]
+    fn test_time_range_new_arrivee_equals_depart() {
+        // Arrivée = départ = invalide
+        let range = TimeRange::new(480, 480);
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("doit être avant"));
+    }
+
+    #[test]
+    fn test_time_range_new_arrivee_too_high() {
+        // Arrivée > 1440 = invalide
+        let range = TimeRange::new(1500, 1600);
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("Heure d'arrivée invalide"));
+    }
+
+    #[test]
+    fn test_time_range_new_depart_too_high() {
+        // Départ > 1440 = invalide
+        let range = TimeRange::new(480, 1500);
+        assert!(range.is_err());
+        assert!(range.unwrap_err().contains("Heure de départ invalide"));
+    }
+
+    #[test]
+    fn test_time_range_new_boundary_values() {
+        // Minuit à minuit-1 = valide (0 à 1439)
+        let range = TimeRange::new(0, 1440);
+        assert!(range.is_ok());
     }
 
     #[test]

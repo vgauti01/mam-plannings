@@ -68,10 +68,9 @@ pub fn add_manual_entry(
 
     // 3. Ajouter l'enfant et sa plage horaire
     let day = &mut app_data.days[day_idx];
-    let range = TimeRange {
-        arrivee: to_minutes_from_midnight(&arrivee),
-        depart: to_minutes_from_midnight(&depart),
-    };
+    let arrivee_min = to_minutes_from_midnight(&arrivee);
+    let depart_min = to_minutes_from_midnight(&depart);
+    let range = TimeRange::new(arrivee_min, depart_min)?;
 
     // 4. Vérifier si l'enfant existe déjà pour ce jour, et ajouter la plage horaire
     if let Some(child) = day.enfants.iter_mut().find(|c| c.nom == child_name) {
@@ -228,7 +227,7 @@ pub async fn import_planning_pdf(
         Ok::<Vec<Day>, String>(final_days)
     }).await;
 
-    result.unwrap_or_else(|_| Err("Le processus d'importation a échoué.".to_string()))
+    result.unwrap_or_else(|e| Err(format!("Erreur lors de l'importation: {:?}", e)))
 }
 
 // --- GESTION DE L'ANNUAIRE (LIBRARY) ---

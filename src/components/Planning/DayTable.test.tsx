@@ -102,9 +102,7 @@ describe("DayTable", () => {
     );
 
     expect(screen.getByText(/ajouter un enfant/i)).toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText(/nom de l'enfant/i)
-    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/nom de l'enfant/i)).toBeInTheDocument();
   });
 
   it("n'affiche pas le formulaire d'ajout sans onAddChild", () => {

@@ -1,7 +1,8 @@
-// src/hooks/usePlanning.ts
+// src/hooks/useTeam.ts
 import { useState, useEffect, useCallback } from "react";
 import { AssistantProfile } from "../types";
 import { planningService } from "../services/planningService";
+import { useToast } from "../contexts/ToastContext";
 
 /**
  * Type de retour du hook useTeam.
@@ -30,6 +31,7 @@ interface UseTeamReturn {
 export const useTeam = (): UseTeamReturn => {
   // État de l'équipe
   const [team, setTeam] = useState<AssistantProfile[]>([]);
+  const toast = useToast();
 
   /**
    * Charge l'équipe depuis le service de planification.
@@ -41,14 +43,15 @@ export const useTeam = (): UseTeamReturn => {
       setTeam(t);
     } catch (err) {
       console.error(err);
+      toast.error("Erreur lors du chargement de l'équipe");
     }
-  }, []);
+  }, [toast]);
 
-  // Charger au démarrage
+  // Charger au démarrage (une seule fois)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadTeam();
-  }, [loadTeam]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Ajoute un nouveau membre à l'équipe.
@@ -57,8 +60,14 @@ export const useTeam = (): UseTeamReturn => {
    * @param color {string} Couleur associée au membre
    */
   const handleAddTeammate = async (name: string, color: string) => {
-    const updated = await planningService.addAssistant(name, color);
-    setTeam(updated);
+    try {
+      const updated = await planningService.addAssistant(name, color);
+      setTeam(updated);
+      toast.success(`${name} ajouté(e) à l'équipe`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'ajout du membre");
+    }
   };
 
   /**
@@ -72,8 +81,14 @@ export const useTeam = (): UseTeamReturn => {
     name: string,
     color: string
   ) => {
-    const updated = await planningService.updateAssistant(id, name, color);
-    setTeam(updated);
+    try {
+      const updated = await planningService.updateAssistant(id, name, color);
+      setTeam(updated);
+      toast.success("Profil mis à jour");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de la mise à jour");
+    }
   };
 
   /**
@@ -81,8 +96,14 @@ export const useTeam = (): UseTeamReturn => {
    * @param id {number} ID du membre à supprimer
    */
   const handleRemoveTeammate = async (id: number) => {
-    const updated = await planningService.removeAssistant(id);
-    setTeam(updated);
+    try {
+      const updated = await planningService.removeAssistant(id);
+      setTeam(updated);
+      toast.success("Membre retiré de l'équipe");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de la suppression");
+    }
   };
 
   return {
