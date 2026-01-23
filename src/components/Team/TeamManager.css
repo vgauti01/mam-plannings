@@ -186,14 +186,22 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 /* === État vide === */
-.team-empty {
+.team-empty-state {
   text-align: center;
-  padding: 32px;
-  color: var(--gray-500);
+  padding: 32px 20px;
+  background: var(--gray-50);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--gray-200);
 }
 
-.team-empty-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
-  opacity: 0.3;
+.team-empty-state .empty-message {
+  font-weight: 600;
+  color: var(--gray-600);
+  margin: 0 0 8px 0;
+}
+
+.team-empty-state .empty-hint {
+  font-size: 0.85rem;
+  color: var(--gray-500);
+  margin: 0;
 }

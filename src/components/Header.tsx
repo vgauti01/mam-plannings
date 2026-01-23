@@ -42,18 +42,20 @@ const Header: React.FC<HeaderProps> = ({
           <h1>MAM Plannings</h1>
         </div>
       </div>
-      <div className="header-actions">
+      <nav className="header-actions" aria-label="Actions principales">
         <button
           onClick={() => setIsTeamModalOpen(true)}
           className="btn-secondary"
+          aria-label="Gérer l'équipe"
         >
-          <LuUsers size={18} /> Équipe
+          <LuUsers size={18} aria-hidden="true" /> Équipe
         </button>
         <button
           onClick={() => setSettingsModalOpen(true)}
           className="btn-primary"
+          aria-label="Importer un planning PDF"
         >
-          <LuFileUp size={18} /> Importer
+          <LuFileUp size={18} aria-hidden="true" /> Importer
         </button>
 
         {/* Menu déroulant d'export */}
@@ -61,34 +63,43 @@ const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => setExportMenuOpen(!exportMenuOpen)}
             className="btn-primary"
+            aria-expanded={exportMenuOpen}
+            aria-haspopup="menu"
+            aria-label="Menu d'export"
           >
-            <LuDownload size={18} /> Exporter <LuChevronDown size={14} />
+            <LuDownload size={18} aria-hidden="true" /> Exporter{" "}
+            <LuChevronDown size={14} aria-hidden="true" />
           </button>
           {exportMenuOpen && (
             <div
               className="export-menu"
+              role="menu"
+              aria-label="Options d'export"
               onMouseLeave={() => setExportMenuOpen(false)}
             >
               <button
+                role="menuitem"
                 onClick={() => {
                   handleExportPdf();
                   setExportMenuOpen(false);
                 }}
               >
-                <LuFileText size={16} /> PDF (lecture seule)
+                <LuFileText size={16} aria-hidden="true" /> PDF (lecture seule)
               </button>
               <button
+                role="menuitem"
                 onClick={() => {
                   handleExportExcel();
                   setExportMenuOpen(false);
                 }}
               >
-                <LuFileSpreadsheet size={16} /> Excel (modifiable)
+                <LuFileSpreadsheet size={16} aria-hidden="true" /> Excel
+                (modifiable)
               </button>
             </div>
           )}
         </div>
-      </div>
+      </nav>
 
       <Modal
         isOpen={settingsModalOpen}

@@ -9,7 +9,7 @@ import {
   LuTriangleAlert,
   LuPlus,
 } from "react-icons/lu";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 
 interface Props {
   day: Day;
@@ -40,6 +40,40 @@ export const DayTable = ({
   const [newChildName, setNewChildName] = useState("");
   const [newStart, setNewStart] = useState("08h00");
   const [newEnd, setNewEnd] = useState("17h00");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Validation du format d'heure (HHhMM)
+  const isValidTimeFormat = useCallback((time: string): boolean => {
+    const match = time.match(/^(\d{1,2})h(\d{2})$/);
+    if (!match) return false;
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+  }, []);
+
+  // Convertir le temps en minutes pour comparaison
+  const timeToMinutes = useCallback((time: string): number => {
+    const match = time.match(/^(\d{1,2})h(\d{2})$/);
+    if (!match) return 0;
+    return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+  }, []);
+
+  // Validation en temps réel
+  const validateForm = useCallback((): string | null => {
+    if (!newChildName.trim()) {
+      return "Le nom de l'enfant est requis";
+    }
+    if (!isValidTimeFormat(newStart)) {
+      return "Format d'arrivée invalide (ex: 08h00)";
+    }
+    if (!isValidTimeFormat(newEnd)) {
+      return "Format de départ invalide (ex: 17h00)";
+    }
+    if (timeToMinutes(newStart) >= timeToMinutes(newEnd)) {
+      return "L'heure d'arrivée doit être avant l'heure de départ";
+    }
+    return null;
+  }, [newChildName, newStart, newEnd, isValidTimeFormat, timeToMinutes]);
 
   const handleDeleteChild = (name: string) => {
     if (!enfants) return;
@@ -56,10 +90,25 @@ export const DayTable = ({
 
   const handleAddChild = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChildName.trim() || !onAddChild) return;
+    const error = validateForm();
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    if (!onAddChild) return;
+
+    setFormError(null);
     onAddChild(newChildName.trim(), newStart, newEnd);
     setNewChildName("");
   };
+
+  // Effacer l'erreur quand l'utilisateur modifie les champs
+  useEffect(() => {
+    if (formError) {
+      setFormError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newChildName, newStart, newEnd]);
 
   // Statistiques du jour
   const stats = useMemo(() => {
@@ -224,6 +273,12 @@ export const DayTable = ({
               Ajouter
             </button>
           </form>
+          {formError && (
+            <div className="form-error" role="alert">
+              <LuTriangleAlert size={14} />
+              <span>{formError}</span>
+            </div>
+          )}
         </div>
       )}
 

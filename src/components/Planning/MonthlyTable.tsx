@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { AssistantProfile, Day, TimeRange } from "../../types";
 import {
   formatDayLabel,
@@ -8,6 +8,8 @@ import {
 } from "../../utils/formatters";
 import { hasDaySurcharge } from "../../utils/presenceCalculator";
 import { TimelineEditor } from "./TimelineEditor";
+import { EmptyState } from "../ui/EmptyState";
+import { LuCalendar } from "react-icons/lu";
 import "./MonthlyTable.css";
 
 interface Props {
@@ -47,7 +49,7 @@ export const MonthlyTable = ({
   // État pour les lignes dépliées
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
-  const toggleExpand = (date: string) => {
+  const toggleExpand = useCallback((date: string) => {
     setExpandedDays((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(date)) {
@@ -57,83 +59,110 @@ export const MonthlyTable = ({
       }
       return newSet;
     });
-  };
+  }, []);
 
-  const monthDays = days.filter((d) => isSameMonth(d.date, currentMonth));
-
-  // 1. Récupérer les IDs de l'équipe active (Configuration)
-  const configIds = team.map((t) => t.id);
-
-  // 2. Récupérer les IDs qui ont réellement des shifts dans les données (Données)
-  const dataIds = new Set<number>();
-  monthDays.forEach((d) => d.am.forEach((s) => dataIds.add(s.am_id)));
-
-  // 3. Fusionner les deux listes, retirer les doublons et trier
-  const amIds = Array.from(
-    new Set([...configIds, ...Array.from(dataIds)])
-  ).sort((a, b) => a - b);
-
-  // Calcul dynamique des colonnes nécessaires
-  let maxAmIdInData = 0;
-  monthDays.forEach((d) =>
-    d.am.forEach((s) => {
-      if (s.am_id > maxAmIdInData) maxAmIdInData = s.am_id;
-    })
+  // Filtrer les jours du mois courant (mémoïsé)
+  const monthDays = useMemo(
+    () => days.filter((d) => isSameMonth(d.date, currentMonth)),
+    [days, currentMonth]
   );
 
-  const handleDragStart = (e: React.DragEvent, date: string, amId: number) => {
-    setDraggedData({ date, amId });
-    // Nécessaire pour Firefox
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", JSON.stringify({ date, amId }));
-  };
+  // Calculer les IDs des AM (mémoïsé)
+  const amIds = useMemo(() => {
+    const configIds = team.map((t) => t.id);
+    const dataIds = new Set<number>();
+    monthDays.forEach((d) => d.am.forEach((s) => dataIds.add(s.am_id)));
 
-  const handleDragOver = (e: React.DragEvent, date: string, amId: number) => {
-    // 1. CRUCIAL : Toujours empêcher le comportement par défaut pour autoriser le drop
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    return Array.from(new Set([...configIds, ...Array.from(dataIds)])).sort(
+      (a, b) => a - b
+    );
+  }, [team, monthDays]);
 
-    // 2. Gestion visuelle : On ne met à jour la cible que si c'est valide (même jour, colonne différente)
-    if (draggedData && draggedData.date === date && draggedData.amId !== amId) {
-      setDragOverTarget({ date, amId });
-    }
-  };
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, date: string, amId: number) => {
+      setDraggedData({ date, amId });
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", JSON.stringify({ date, amId }));
+    },
+    []
+  );
 
-  const handleDrop = (e: React.DragEvent, date: string, targetAmId: number) => {
-    e.preventDefault();
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, date: string, amId: number) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
 
-    if (
-      draggedData &&
-      draggedData.date === date &&
-      draggedData.amId !== targetAmId
-    ) {
-      // Appel au parent pour faire l'échange
-      onSwap(date, draggedData.amId, targetAmId);
-    }
+      if (draggedData && draggedData.date === date && draggedData.amId !== amId) {
+        setDragOverTarget({ date, amId });
+      }
+    },
+    [draggedData]
+  );
 
-    // Reset des états
-    setDraggedData(null);
+  const handleDrop = useCallback(
+    (e: React.DragEvent, date: string, targetAmId: number) => {
+      e.preventDefault();
+
+      if (
+        draggedData &&
+        draggedData.date === date &&
+        draggedData.amId !== targetAmId
+      ) {
+        onSwap(date, draggedData.amId, targetAmId);
+      }
+
+      setDraggedData(null);
+      setDragOverTarget(null);
+    },
+    [draggedData, onSwap]
+  );
+
+  const handleDragLeave = useCallback(() => {
     setDragOverTarget(null);
-  };
+  }, []);
 
-  // Helpers affichage
-  const getAmName = (id: number) =>
-    team.find((t) => t.id === id)?.name || `AM ${id + 1}`;
-  const getAmColor = (id: number) =>
-    team.find((t) => t.id === id)?.color || "#e9ecef";
+  // Map pour lookup rapide des profils AM (mémoïsé)
+  const teamMap = useMemo(() => {
+    const map = new Map<number, AssistantProfile>();
+    team.forEach((t) => map.set(t.id, t));
+    return map;
+  }, [team]);
 
-  // Totaux
-  const amTotals = amIds.map((amId) => {
-    let total = 0;
-    monthDays.forEach((day) => {
-      day.am
-        .filter((s) => s.am_id === amId)
-        .forEach((s) => {
-          total += getShiftTotalMinutes(s.heures);
-        });
+  // Helpers affichage (utilisent le map mémoïsé)
+  const getAmName = useCallback(
+    (id: number) => teamMap.get(id)?.name || `AM ${id + 1}`,
+    [teamMap]
+  );
+  const getAmColor = useCallback(
+    (id: number) => teamMap.get(id)?.color || "#e9ecef",
+    [teamMap]
+  );
+
+  // Totaux (mémoïsé)
+  const amTotals = useMemo(() => {
+    return amIds.map((amId) => {
+      let total = 0;
+      monthDays.forEach((day) => {
+        day.am
+          .filter((s) => s.am_id === amId)
+          .forEach((s) => {
+            total += getShiftTotalMinutes(s.heures);
+          });
+      });
+      return total;
     });
-    return total;
-  });
+  }, [amIds, monthDays]);
+
+  // Afficher un empty state si aucun jour ce mois
+  if (monthDays.length === 0) {
+    return (
+      <EmptyState
+        icon={<LuCalendar size={32} />}
+        title="Aucun planning pour ce mois"
+        description="Importez un fichier PDF ou ajoutez manuellement des entrées pour commencer à planifier."
+      />
+    );
+  }
 
   return (
     <div className="table-container">
@@ -200,7 +229,7 @@ export const MonthlyTable = ({
                         onDragOver={(e) => handleDragOver(e, day.date, amId)}
                         onDrop={(e) => handleDrop(e, day.date, amId)}
                         // UX : On quitte la zone -> on nettoie la cible visuelle
-                        onDragLeave={() => setDragOverTarget(null)}
+                        onDragLeave={handleDragLeave}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (hasShifts) {

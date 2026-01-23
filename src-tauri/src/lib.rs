@@ -20,7 +20,8 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             get_planning,
-            
+            restore_planning,
+
             // Gestion Quotidienne
             add_manual_entry,
             remove_child,

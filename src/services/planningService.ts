@@ -12,6 +12,10 @@ export const planningService = {
     return await invoke("get_planning");
   },
 
+  async restorePlanning(days: Day[]): Promise<Day[]> {
+    return await invoke("restore_planning", { days });
+  },
+
   async importPdf(
     path: string,
     year: number,

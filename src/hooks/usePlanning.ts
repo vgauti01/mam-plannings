@@ -1,22 +1,20 @@
 // src/hooks/usePlanning.ts
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Day, TimeRange } from "../types";
 import { planningService } from "../services/planningService";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useToast } from "../contexts/ToastContext";
+import { useUndoRedoKeyboard } from "./useHistory";
+
+const MAX_HISTORY_SIZE = 30;
+
+interface HistoryEntry {
+  days: Day[];
+  actionName: string;
+}
 
 /**
  * Type de retour du hook usePlanning.
- * Contient les jours, les fonctions de gestion et les états de chargement/erreur.
- * @param {Day[]} days - La liste des jours du planning.
- * @param {(date: string) => Promise<void> } handleRemoveDay - Fonction pour supprimer un jour.
- * @param {(date: string, id1: number, id2: number) => Promise<void> handleSwap - Fonction pour échanger deux shifts.
- * @param {() => Promise<void>} handleImportPdf - Fonction pour importer un fichier PDF.
- * @param {(date: string, name: string, start: string, end: string) => Promise<void>} handleAddEntry - Fonction pour ajouter une entrée manuelle.
- * @param {(date: string, childName: string) => Promise<void>} handleDeleteChild - Fonction pour supprimer un enfant d'un jour.
- * @param {(date: string, amId: number, newRanges: TimeRange[]) => Promise<void>} handleUpdateShift - Fonction pour mettre à jour un shift AM.
- * @param {boolean} loading - Indicateur de chargement.
- * @param {string | null} error - Message d'erreur s'il y en a un.
  */
 interface UsePlanningReturn {
   days: Day[];
@@ -40,6 +38,10 @@ interface UsePlanningReturn {
     newRanges: TimeRange[]
   ) => Promise<void>;
   handleUpdateRatio: (date: string, ratio: number) => Promise<void>;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+  canUndo: boolean;
+  canRedo: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -55,8 +57,78 @@ export const usePlanning = (): UsePlanningReturn => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Historique pour undo/redo
+  const historyRef = useRef<HistoryEntry[]>([]);
+  const futureRef = useRef<HistoryEntry[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
   // Toast notifications
   const toast = useToast();
+
+  // Met à jour les indicateurs undo/redo
+  const updateUndoRedoState = useCallback(() => {
+    setCanUndo(historyRef.current.length > 0);
+    setCanRedo(futureRef.current.length > 0);
+  }, []);
+
+  // Sauvegarde l'état actuel dans l'historique
+  const saveToHistory = useCallback(
+    (currentDays: Day[], actionName: string) => {
+      historyRef.current.push({ days: currentDays, actionName });
+      if (historyRef.current.length > MAX_HISTORY_SIZE) {
+        historyRef.current.shift();
+      }
+      futureRef.current = []; // Efface le futur lors d'une nouvelle action
+      updateUndoRedoState();
+    },
+    [updateUndoRedoState]
+  );
+
+  // Undo - Annuler la dernière action
+  const undo = useCallback(async () => {
+    if (historyRef.current.length === 0) return;
+
+    const previousEntry = historyRef.current.pop()!;
+    futureRef.current.unshift({ days: days, actionName: "redo" });
+
+    try {
+      const restored = await planningService.restorePlanning(previousEntry.days);
+      setDays(restored);
+      toast.info(`Annulé: ${previousEntry.actionName}`);
+    } catch (err) {
+      // En cas d'erreur, on remet l'entrée dans l'historique
+      historyRef.current.push(previousEntry);
+      futureRef.current.shift();
+      toast.error("Erreur lors de l'annulation");
+    }
+
+    updateUndoRedoState();
+  }, [days, toast, updateUndoRedoState]);
+
+  // Redo - Rétablir l'action annulée
+  const redo = useCallback(async () => {
+    if (futureRef.current.length === 0) return;
+
+    const nextEntry = futureRef.current.shift()!;
+    historyRef.current.push({ days: days, actionName: "undo" });
+
+    try {
+      const restored = await planningService.restorePlanning(nextEntry.days);
+      setDays(restored);
+      toast.info("Action rétablie");
+    } catch (err) {
+      // En cas d'erreur, on remet l'entrée dans le futur
+      futureRef.current.unshift(nextEntry);
+      historyRef.current.pop();
+      toast.error("Erreur lors du rétablissement");
+    }
+
+    updateUndoRedoState();
+  }, [days, toast, updateUndoRedoState]);
+
+  // Raccourcis clavier Ctrl+Z / Ctrl+Shift+Z
+  useUndoRedoKeyboard(undo, redo, true);
 
   /**
    * Charge le planning depuis le service.
@@ -102,7 +174,10 @@ export const usePlanning = (): UsePlanningReturn => {
       if (file) {
         // 2. DÉBUT DU CHARGEMENT
         setLoading(true);
-        setError(null); // Effacer l'erreur précédente
+        setError(null);
+
+        // Sauvegarder l'état actuel pour undo
+        saveToHistory(days, "Import PDF");
 
         const updated = await planningService.importPdf(
           file,
@@ -141,6 +216,8 @@ export const usePlanning = (): UsePlanningReturn => {
   ): Promise<void> => {
     try {
       setError(null);
+      saveToHistory(days, `Ajout ${name}`);
+
       const updated = await planningService.addManualEntry(
         date,
         name,
@@ -174,6 +251,8 @@ export const usePlanning = (): UsePlanningReturn => {
   ): Promise<void> => {
     try {
       setError(null);
+      saveToHistory(days, `Suppression ${childName}`);
+
       const updated = await planningService.removeChild(date, childName);
       setDays(updated);
       toast.success(`${childName} retiré(e) du planning`);
@@ -192,6 +271,8 @@ export const usePlanning = (): UsePlanningReturn => {
   const handleRemoveDay = async (date: string): Promise<void> => {
     try {
       setError(null);
+      saveToHistory(days, "Suppression journée");
+
       const updated = await planningService.removeDay(date);
       setDays(updated);
       toast.success("Journée supprimée");
@@ -216,6 +297,8 @@ export const usePlanning = (): UsePlanningReturn => {
   ): Promise<void> => {
     try {
       setError(null);
+      saveToHistory(days, "Échange shifts");
+
       const updated = await planningService.swapShifts(date, id1, id2);
       setDays(updated);
       toast.success("Shifts échangés");
@@ -239,6 +322,9 @@ export const usePlanning = (): UsePlanningReturn => {
   ): Promise<void> => {
     try {
       setError(null);
+      // Sauvegarder pour undo (même pour drag-drop, on veut pouvoir annuler)
+      saveToHistory(days, "Modification shift");
+
       const updated = await planningService.updateAssistantShift(
         date,
         amId,
@@ -264,6 +350,8 @@ export const usePlanning = (): UsePlanningReturn => {
   ): Promise<void> => {
     try {
       setError(null);
+      saveToHistory(days, "Modification ratio");
+
       const updated = await planningService.updateDayRatio(date, ratio);
       setDays(updated);
       toast.info(`Ratio mis à jour: 1 AM pour ${ratio} enfants`);
@@ -282,6 +370,10 @@ export const usePlanning = (): UsePlanningReturn => {
     handleDeleteChild,
     handleUpdateShift,
     handleUpdateRatio,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     loading,
     error,
   };

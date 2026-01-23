@@ -35,8 +35,16 @@ export const TeamManager = ({ team, onAdd, onUpdate, onDelete }: Props) => {
 
   return (
     <div className="team-manager">
-      <ul className="team-list">
-        {team.map((am) => (
+      {team.length === 0 ? (
+        <div className="team-empty-state">
+          <p className="empty-message">Aucun membre dans l'équipe</p>
+          <p className="empty-hint">
+            Ajoutez des assistants maternels pour commencer à planifier.
+          </p>
+        </div>
+      ) : (
+        <ul className="team-list">
+          {team.map((am) => (
           <li key={am.id} className="team-item">
             {editingId === am.id ? (
               // MODE EDITION
@@ -90,7 +98,8 @@ export const TeamManager = ({ team, onAdd, onUpdate, onDelete }: Props) => {
             )}
           </li>
         ))}
-      </ul>
+        </ul>
+      )}
 
       {/* Formulaire d'ajout */}
       <div className="add-am-form">

@@ -369,6 +369,25 @@ pub fn edit_assistant_shift(
     Ok(state.data.lock().unwrap().days.clone())
 }
 
+/// Restaure l'état complet du planning (utilisé pour undo/redo)
+/// # Arguments
+/// * `days` - Liste complète des jours à restaurer
+/// # Returns
+/// * `Result<Vec<Day>, String>` - Liste restaurée des jours
+#[tauri::command]
+pub fn restore_planning(
+    state: tauri::State<AppState>,
+    days: Vec<Day>
+) -> Result<Vec<Day>, String> {
+    let mut data = state.data.lock().unwrap();
+    data.days = days;
+
+    drop(data);
+    state.save().map_err(|e| e.to_string())?;
+
+    Ok(state.data.lock().unwrap().days.clone())
+}
+
 /// Modifie le ratio enfants/AM pour un jour spécifique
 /// # Arguments
 /// * `date` - Date au format "YYYY-MM-DD"
