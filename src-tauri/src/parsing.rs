@@ -158,8 +158,9 @@ fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team:
         Regex::new(r"^\s*\d{1,2}h\d{2}\s*-\s*\d{1,2}h\d{2}.*$").ok()?;
 
     // Début d'une ligne enfant, ex: "Anna H. M.F. 8h00 - 8h30/16h30 - 18h00"
+    // \p{Lu} = majuscule Unicode, \p{L} = lettre Unicode (couvre ô, î, ë, etc.)
     let child_start_re = Regex::new(
-        r"^[A-ZÉÈÀÂÇ][a-zA-Zéèêàâçïü\-]+(?:\s+[A-Z][a-zA-Zéèêàâçïü\-]+)?\s+[A-Z]\.",
+        r"^\p{Lu}[\p{L}\-]+(?:\s+\p{Lu}[\p{L}\-]+)?\s+\p{Lu}\.",
     ).ok()?;
 
     // "8h00 - 8h30" ou "16h30 - 18h00" etc.
