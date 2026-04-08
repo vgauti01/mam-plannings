@@ -8,11 +8,76 @@ struct Segment {
     am_needed: u8,
 }
 
-/// Calcule les shifts des assistants maternels pour une liste d'enfants donnée
-/// avec équilibrage des heures entre les AM.
-///
-/// L'algorithme favorise les AM avec le moins d'heures accumulées pour les nouveaux shifts,
-/// et retire en priorité ceux qui ont le plus d'heures quand on doit réduire le nombre d'AM.
+/// Calcule la durée totale de chaque position de slot sur la journée.
+/// La position 0 est la plus stable (active le plus longtemps), les positions hautes
+/// sont les postes rotatifs (fermés en premier via LIFO, rouverts en premier).
+fn compute_slot_durations(segments: &[Segment]) -> Vec<u32> {
+    let max_slots = segments.iter().map(|s| s.am_needed as usize).max().unwrap_or(0);
+    let mut durations = vec![0u32; max_slots];
+    let mut slot_starts: Vec<Option<u16>> = vec![None; max_slots];
+    let mut active_count: usize = 0;
+
+    for seg in segments {
+        let needed = seg.am_needed as usize;
+
+        if needed > active_count {
+            for i in active_count..needed {
+                slot_starts[i] = Some(seg.start);
+            }
+            active_count = needed;
+        } else if needed < active_count {
+            for i in needed..active_count {
+                if let Some(s) = slot_starts[i] {
+                    durations[i] += (seg.start - s) as u32;
+                    slot_starts[i] = None;
+                }
+            }
+            active_count = needed;
+        }
+    }
+
+    if let Some(last) = segments.last() {
+        for i in 0..active_count {
+            if let Some(s) = slot_starts[i] {
+                durations[i] += (last.end - s) as u32;
+            }
+        }
+    }
+
+    durations
+}
+
+/// Construit la table d'affectation slot → am_id.
+/// Les slots les plus longs sont attribués aux AM avec le moins d'heures accumulées.
+/// En cas d'égalité d'heures, l'ordre dans `available_ams` est respecté (tri stable).
+fn build_slot_assignment(
+    slot_durations: &[u32],
+    available_ams: &[AssistantProfile],
+    accumulated_hours: &HashMap<u8, u32>,
+) -> Vec<u8> {
+    let num_slots = slot_durations.len();
+
+    // Indices des slots triés par durée décroissante (slot le plus long en premier)
+    let mut slot_indices: Vec<usize> = (0..num_slots).collect();
+    slot_indices.sort_by(|&a, &b| slot_durations[b].cmp(&slot_durations[a]));
+
+    // Indices de TOUTES les AM triés par heures accumulées croissantes (moins d'heures en premier)
+    // On trie sur toutes les AM disponibles avant de limiter au nombre de slots
+    let mut am_indices: Vec<usize> = (0..available_ams.len()).collect();
+    am_indices.sort_by_key(|&i| *accumulated_hours.get(&available_ams[i].id).unwrap_or(&0));
+
+    let mut am_for_slot = vec![0u8; num_slots];
+    for (rank, &slot_idx) in slot_indices.iter().enumerate() {
+        if rank < am_indices.len() {
+            am_for_slot[slot_idx] = available_ams[am_indices[rank]].id;
+        }
+    }
+
+    am_for_slot
+}
+
+/// Calcule les shifts des assistants maternels pour une liste d'enfants donnée.
+/// Wrapper de `compute_assistant_shifts_balanced` sans heures accumulées.
 ///
 /// # Arguments
 /// * `enfants` - Référence à une tranche d'enfants avec leurs horaires
@@ -21,131 +86,18 @@ struct Segment {
 /// # Returns
 /// * `Vec<AssistantShift>` - Liste des shifts des assistants maternels
 pub fn compute_assistant_shifts(enfants: &[Child], ratio: u8, available_ams: &[AssistantProfile]) -> Vec<AssistantShift> {
-    let available_ids: Vec<u8> = available_ams.iter().map(|am| am.id).collect();
-    let max_am = available_ids.len() as u8;
-
-    // Construire les segments de temps
-    let segments = build_segments(enfants, max_am, ratio);
-    // Si pas de segments, retourner vide
-    if segments.is_empty() {
-        return Vec::new();
-    }
-
-    // Fin de journée (dernier segment)
-    let day_end = segments.last().unwrap().end;
-
-    // État interne pour le calcul
-    #[derive(Debug)]
-    struct AssistState {
-        id: u8,
-        start: Option<u16>,      // Début du shift courant
-        active: bool,            // Est-ce que l'AM travaille actuellement ?
-        total_minutes: u32,      // Total des minutes travaillées (pour l'équilibrage)
-    }
-
-    // Initialiser les états des assistants maternels
-    let mut ams: Vec<AssistState> = available_ids
-        .iter()
-        .map(|&real_id| AssistState {
-            id: real_id,
-            start: None,
-            active: false,
-            total_minutes: 0,
-        })
-        .collect();
-
-    // Résultat : on pourra pousser plusieurs AssistantShift par AM
-    let mut result: Vec<AssistantShift> = Vec::new();
-
-    // Petit utilitaire : ajouter un TimeRange au shift existant pour cet am_id ou créer un nouveau shift
-    fn push_time_range(result: &mut Vec<AssistantShift>, am_id: u8, tr: TimeRange) {
-        if let Some(shift) = result.iter_mut().find(|s| s.am_id == am_id) {
-            shift.heures.push(tr);
-        } else {
-            result.push(AssistantShift { am_id, heures: vec![tr] });
-        }
-    }
-
-    // Parcourir les segments pour ajuster les shifts des assistants maternels
-    for seg in &segments {
-        let needed = seg.am_needed.min(max_am);
-
-        // Nombre d'AM actuellement actifs
-        let active_count = ams.iter().filter(|a| a.active).count() as u8;
-
-        // Ajuster le nombre d'AM actifs selon les besoins du segment
-        if needed > active_count {
-            // AJOUT : choisir les AM avec le moins d'heures travaillées
-            let mut to_add = needed - active_count;
-
-            // Trier les AM inactifs par total_minutes (croissant) pour équilibrer
-            let mut inactive_indices: Vec<usize> = ams
-                .iter()
-                .enumerate()
-                .filter(|(_, a)| !a.active)
-                .map(|(i, _)| i)
-                .collect();
-
-            // Trier par heures travaillées (le moins d'heures en premier)
-            inactive_indices.sort_by_key(|&i| ams[i].total_minutes);
-
-            for idx in inactive_indices {
-                if to_add == 0 { break; }
-                ams[idx].start = Some(seg.start);
-                ams[idx].active = true;
-                to_add -= 1;
-            }
-        } else if needed < active_count {
-            // RETRAIT : retirer les AM avec le plus d'heures travaillées
-            // (pour équilibrer, on garde ceux qui ont moins travaillé)
-            let mut active_indices: Vec<usize> = ams
-                .iter()
-                .enumerate()
-                .filter(|(_, a)| a.active)
-                .map(|(i, _)| i)
-                .collect();
-
-            // Trier par heures travaillées (le plus d'heures en premier = à retirer en priorité)
-            // On ajoute aussi les heures du shift en cours pour un calcul plus précis
-            active_indices.sort_by_key(|&i| {
-                let current_shift_duration = ams[i].start.map(|s| (seg.start - s) as u32).unwrap_or(0);
-                std::cmp::Reverse(ams[i].total_minutes + current_shift_duration)
-            });
-
-            let mut to_remove = active_count - needed;
-            for idx in active_indices {
-                if to_remove == 0 { break; }
-                // Clore le shift et comptabiliser les heures
-                if let Some(s) = ams[idx].start {
-                    let duration = (seg.start - s) as u32;
-                    ams[idx].total_minutes += duration;
-                    push_time_range(&mut result, ams[idx].id, TimeRange { arrivee: s, depart: seg.start });
-                }
-                ams[idx].active = false;
-                ams[idx].start = None;
-                to_remove -= 1;
-            }
-        }
-    }
-
-    // Clôture fin de journée : pour chaque AM encore actif, clore son shift
-    for am in &mut ams {
-        if am.active {
-            if let Some(s) = am.start {
-                push_time_range(&mut result, am.id, TimeRange { arrivee: s, depart: day_end });
-            }
-            am.active = false;
-            am.start = None;
-        }
-    }
-
-    // Retourner tous les shifts collectés (plusieurs par AM possible)
-    result
+    compute_assistant_shifts_balanced(enfants, ratio, available_ams, &HashMap::new())
 }
 
 /// Calcule les shifts avec équilibrage sur plusieurs jours.
-/// Cette fonction prend en compte les heures déjà travaillées sur le mois
-/// pour mieux répartir les nouveaux shifts.
+///
+/// L'algorithme fonctionne en 2 passes :
+/// 1. Calcul des durées de chaque position de slot sur la journée
+/// 2. Pré-affectation : les slots les plus longs vont aux AM avec le moins d'heures accumulées
+///
+/// La rotation FIFO est garantie structurellement : les positions hautes (rotatifs) ferment
+/// en premier (LIFO) et rouvrent en premier, donc l'AM qui débauche en premier réembauche
+/// en premier.
 ///
 /// # Arguments
 /// * `enfants` - Liste des enfants pour le jour courant
@@ -158,10 +110,9 @@ pub fn compute_assistant_shifts_balanced(
     enfants: &[Child],
     ratio: u8,
     available_ams: &[AssistantProfile],
-    accumulated_hours: &HashMap<u8, u32>
+    accumulated_hours: &HashMap<u8, u32>,
 ) -> Vec<AssistantShift> {
-    let available_ids: Vec<u8> = available_ams.iter().map(|am| am.id).collect();
-    let max_am = available_ids.len() as u8;
+    let max_am = available_ams.len() as u8;
 
     let segments = build_segments(enfants, max_am, ratio);
     if segments.is_empty() {
@@ -170,22 +121,25 @@ pub fn compute_assistant_shifts_balanced(
 
     let day_end = segments.last().unwrap().end;
 
+    // Passe 1 : durées par position de slot + affectation slot → AM
+    let slot_durations = compute_slot_durations(&segments);
+    let am_for_slot = build_slot_assignment(&slot_durations, available_ams, accumulated_hours);
+
     #[derive(Debug)]
     struct AssistState {
         id: u8,
         start: Option<u16>,
         active: bool,
-        total_minutes: u32,  // Inclut les heures accumulées du mois
+        slot_index: usize,  // Position dans am_for_slot
     }
 
-    // Initialiser avec les heures déjà accumulées
-    let mut ams: Vec<AssistState> = available_ids
+    let mut ams: Vec<AssistState> = available_ams
         .iter()
-        .map(|&real_id| AssistState {
-            id: real_id,
+        .map(|am| AssistState {
+            id: am.id,
             start: None,
             active: false,
-            total_minutes: *accumulated_hours.get(&real_id).unwrap_or(&0),
+            slot_index: 0,
         })
         .collect();
 
@@ -199,55 +153,36 @@ pub fn compute_assistant_shifts_balanced(
         }
     }
 
+    // Passe 2 : exécution segment par segment avec affectation fixe
     for seg in &segments {
-        let needed = seg.am_needed.min(max_am);
-        let active_count = ams.iter().filter(|a| a.active).count() as u8;
+        let needed = seg.am_needed.min(max_am) as usize;
+        let active_count = ams.iter().filter(|a| a.active).count();
 
         if needed > active_count {
-            let mut to_add = needed - active_count;
-            let mut inactive_indices: Vec<usize> = ams
-                .iter()
-                .enumerate()
-                .filter(|(_, a)| !a.active)
-                .map(|(i, _)| i)
-                .collect();
-
-            inactive_indices.sort_by_key(|&i| ams[i].total_minutes);
-
-            for idx in inactive_indices {
-                if to_add == 0 { break; }
-                ams[idx].start = Some(seg.start);
-                ams[idx].active = true;
-                to_add -= 1;
+            // AJOUT : ouvrir les slots depuis active_count jusqu'à needed-1
+            for slot_idx in active_count..needed {
+                let target_id = am_for_slot[slot_idx];
+                if let Some(am) = ams.iter_mut().find(|a| !a.active && a.id == target_id) {
+                    am.start = Some(seg.start);
+                    am.active = true;
+                    am.slot_index = slot_idx;
+                }
             }
         } else if needed < active_count {
-            let mut active_indices: Vec<usize> = ams
-                .iter()
-                .enumerate()
-                .filter(|(_, a)| a.active)
-                .map(|(i, _)| i)
-                .collect();
-
-            active_indices.sort_by_key(|&i| {
-                let current_shift_duration = ams[i].start.map(|s| (seg.start - s) as u32).unwrap_or(0);
-                std::cmp::Reverse(ams[i].total_minutes + current_shift_duration)
-            });
-
-            let mut to_remove = active_count - needed;
-            for idx in active_indices {
-                if to_remove == 0 { break; }
-                if let Some(s) = ams[idx].start {
-                    let duration = (seg.start - s) as u32;
-                    ams[idx].total_minutes += duration;
-                    push_time_range(&mut result, ams[idx].id, TimeRange { arrivee: s, depart: seg.start });
+            // RETRAIT LIFO : fermer les slots depuis active_count-1 jusqu'à needed
+            for slot_idx in (needed..active_count).rev() {
+                if let Some(am) = ams.iter_mut().find(|a| a.active && a.slot_index == slot_idx) {
+                    if let Some(s) = am.start {
+                        push_time_range(&mut result, am.id, TimeRange { arrivee: s, depart: seg.start });
+                    }
+                    am.active = false;
+                    am.start = None;
                 }
-                ams[idx].active = false;
-                ams[idx].start = None;
-                to_remove -= 1;
             }
         }
     }
 
+    // Clôture fin de journée
     for am in &mut ams {
         if am.active {
             if let Some(s) = am.start {
@@ -439,9 +374,68 @@ mod tests {
 
         let result = compute_assistant_shifts_balanced(&enfants, 4, &ams, &accumulated);
 
-        // L'algorithme devrait préférer AM2 car il a moins d'heures
+        // L'algorithme devrait préférer AM2 car il a moins d'heures (slot unique → AM avec moins d'heures)
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].am_id, 1);
+    }
+
+    #[test]
+    fn test_longer_slot_assigned_to_am_with_fewer_hours() {
+        // Scénario : slot0 = 8h→17h (540 min), slot1 = 14h→16h (120 min)
+        // AM1 a 600 min accumulées, AM2 a 100 min → AM2 (moins d'heures) doit avoir le slot long
+        let enfants = vec![
+            create_child("Alice", 480, 1020), // 8h - 17h
+            create_child("Bob", 480, 1020),
+            create_child("Charlie", 480, 1020),
+            create_child("David", 480, 1020),
+            create_child("Eve", 840, 960),    // 14h - 16h (5e enfant → 2e AM nécessaire sur ce créneau)
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+
+        // AM1 a beaucoup d'heures, AM2 très peu → AM2 devrait avoir le slot le plus long
+        let mut accumulated: HashMap<u8, u32> = HashMap::new();
+        accumulated.insert(0, 600); // AM1 : 10h accumulées
+        accumulated.insert(1, 100); // AM2 : 1h40 accumulées
+
+        let result = compute_assistant_shifts_balanced(&enfants, 4, &ams, &accumulated);
+
+        // Trouver l'AM qui a le shift le plus long
+        let duration_per_am: Vec<(u8, u32)> = result.iter().map(|s| {
+            let dur: u32 = s.heures.iter().map(|r| (r.depart - r.arrivee) as u32).sum();
+            (s.am_id, dur)
+        }).collect();
+
+        let longest = duration_per_am.iter().max_by_key(|&&(_, d)| d).unwrap();
+        // AM2 (id=1, moins d'heures) doit avoir le slot le plus long
+        assert_eq!(longest.0, 1, "AM avec moins d'heures accumulées devrait avoir le slot le plus long");
+    }
+
+    #[test]
+    fn test_fifo_rotation_debauche_reembauche() {
+        // Scénario FIFO : l'AM qui débauche en premier doit réembaucher en premier
+        // Matin 8h-12h : 2 AM (slot0=AM1, slot1=AM2)
+        // Midi 12h-14h : 1 AM (AM2 débauche en premier = LIFO ferme slot1)
+        // AprèsMidi 14h-17h : 2 AM (AM2 réembauche en premier)
+        let enfants = vec![
+            create_child("Alice", 480, 1020),   // 8h - 17h
+            create_child("Bob", 480, 1020),
+            create_child("Charlie", 480, 1020),
+            create_child("David", 480, 1020),
+            create_child("Eve", 480, 720),      // 8h - 12h (5e enfant le matin → 2 AM)
+            create_child("Frank", 840, 1020),   // 14h - 17h (5e enfant l'AM → 2 AM)
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        // AM2 (slot1) doit avoir 2 plages : 8h-12h et 14h-17h (débauche et réembauche)
+        let am2_shift = result.iter().find(|s| s.am_id == 1);
+        assert!(am2_shift.is_some(), "AM2 devrait avoir des shifts");
+        let am2 = am2_shift.unwrap();
+        assert_eq!(am2.heures.len(), 2, "AM2 devrait avoir 2 plages (matin + après-midi)");
+        assert_eq!(am2.heures[0].arrivee, 480);
+        assert_eq!(am2.heures[0].depart, 720);
+        assert_eq!(am2.heures[1].arrivee, 840);
+        assert_eq!(am2.heures[1].depart, 1020);
     }
 
     #[test]
