@@ -397,6 +397,38 @@
   opacity: 1;
 }
 
+/* === Responsive petits écrans desktop === */
+@media (max-width: 1366px) {
+  .chart-label,
+  .shift-timeline-label {
+    width: 80px;
+  }
+  .chart-legend {
+    margin-left: 80px;
+  }
+  .shift-timeline-label {
+    font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  .chart-label,
+  .shift-timeline-label {
+    width: 68px;
+    padding-right: 8px;
+  }
+  .chart-legend {
+    margin-left: 68px;
+  }
+  .legend-item {
+    font-size: 0.65rem;
+    gap: 4px;
+  }
+  .shift-time-label {
+    font-size: 0.65rem;
+  }
+}
+
 /* --- Poignées de redimensionnement --- */
 .resize-handle {
   position: absolute;

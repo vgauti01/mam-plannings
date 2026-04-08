@@ -166,6 +166,25 @@ body {
   animation: fadeIn 0.3s ease-out;
 }
 
+/* === Responsive petits écrans desktop (1024-1366px) === */
+@media (max-width: 1366px) {
+  .container {
+    padding: 16px;
+  }
+  .planning-board {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .container {
+    padding: 12px;
+  }
+  .planning-board {
+    padding: 12px;
+  }
+}
+
 /* === Accessibilité: respect des préférences de mouvement === */
 @media (prefers-reduced-motion: reduce) {
   *,

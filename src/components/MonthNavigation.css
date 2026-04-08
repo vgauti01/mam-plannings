@@ -63,3 +63,15 @@
 .month-nav-today:hover {
   background: var(--primary-100);
 }
+
+/* Responsive petits écrans desktop */
+@media (max-width: 1366px) {
+  .month-nav {
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .month-nav h2 {
+    font-size: 1.15rem;
+    min-width: 190px;
+  }
+}

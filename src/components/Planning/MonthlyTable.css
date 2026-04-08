@@ -277,6 +277,64 @@
   color: var(--primary-500);
 }
 
+/* === Responsive petits écrans desktop === */
+@media (max-width: 1366px) {
+  .table-container {
+    max-height: calc(100vh - 280px);
+  }
+  .monthly-grid th {
+    padding: 10px 10px;
+    font-size: 0.8rem;
+  }
+  .date-cell {
+    min-width: 76px;
+    padding: 10px 10px;
+  }
+  .shift-cell {
+    height: 48px;
+    padding: 6px 8px;
+  }
+  .shift-pill {
+    font-size: 0.7rem;
+    padding: 3px 7px;
+  }
+  .monthly-grid tfoot td {
+    padding: 10px 10px;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 1200px) {
+  .monthly-grid {
+    min-width: 700px;
+  }
+  .date-cell {
+    min-width: 68px;
+    padding: 8px 8px;
+  }
+  .shift-cell {
+    height: 44px;
+    padding: 5px 6px;
+  }
+  .day-num {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  .monthly-grid {
+    min-width: 620px;
+  }
+  .date-cell {
+    min-width: 60px;
+    padding: 8px 6px;
+  }
+  .shift-pill {
+    font-size: 0.65rem;
+    padding: 2px 5px;
+  }
+}
+
 /* === État vide du tableau === */
 .empty-table-message {
   text-align: center;

@@ -275,16 +275,19 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
   }, []);
 
   // Démarrer l'édition d'une plage
-  const handleStartEdit = useCallback((e: React.MouseEvent, rangeIndex: number) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const range = shift.heures[rangeIndex];
-    setEditingRange({
-      index: rangeIndex,
-      arrivee: minutesToTime(range.arrivee),
-      depart: minutesToTime(range.depart),
-    });
-  }, [shift.heures]);
+  const handleStartEdit = useCallback(
+    (e: React.MouseEvent, rangeIndex: number) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const range = shift.heures[rangeIndex];
+      setEditingRange({
+        index: rangeIndex,
+        arrivee: minutesToTime(range.arrivee),
+        depart: minutesToTime(range.depart),
+      });
+    },
+    [shift.heures]
+  );
 
   // Valider et appliquer les changements
   const handleConfirmEdit = useCallback(() => {
@@ -306,7 +309,10 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
     }
 
     // Limiter aux bornes de la journée
-    const clampedArrivee = Math.max(DAY_START, Math.min(DAY_END, arriveeMinutes));
+    const clampedArrivee = Math.max(
+      DAY_START,
+      Math.min(DAY_END, arriveeMinutes)
+    );
     const clampedDepart = Math.max(DAY_START, Math.min(DAY_END, departMinutes));
 
     const newRanges = [...shift.heures];
@@ -327,28 +333,34 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
   }, []);
 
   // Gérer les touches clavier dans les inputs
-  const handleEditKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleConfirmEdit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      handleCancelEdit();
-    }
-  }, [handleConfirmEdit, handleCancelEdit]);
+  const handleEditKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleConfirmEdit();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleCancelEdit();
+      }
+    },
+    [handleConfirmEdit, handleCancelEdit]
+  );
 
   // Gérer le blur avec délai pour permettre le passage entre inputs
-  const handleEditBlur = useCallback((e: React.FocusEvent) => {
-    // Vérifier si le focus passe à un autre élément dans la même zone d'édition
-    const relatedTarget = e.relatedTarget as HTMLElement;
-    if (relatedTarget?.closest('.shift-time-edit')) {
-      return; // Ne pas confirmer si on passe à l'autre input
-    }
-    // Petit délai pour laisser le temps au clic de se propager
-    setTimeout(() => {
-      handleConfirmEdit();
-    }, 150);
-  }, [handleConfirmEdit]);
+  const handleEditBlur = useCallback(
+    (e: React.FocusEvent) => {
+      // Vérifier si le focus passe à un autre élément dans la même zone d'édition
+      const relatedTarget = e.relatedTarget as HTMLElement;
+      if (relatedTarget?.closest(".shift-time-edit")) {
+        return; // Ne pas confirmer si on passe à l'autre input
+      }
+      // Petit délai pour laisser le temps au clic de se propager
+      setTimeout(() => {
+        handleConfirmEdit();
+      }, 150);
+    },
+    [handleConfirmEdit]
+  );
 
   const minutesToPixels = useCallback(
     (minutes: number) =>
@@ -613,12 +625,20 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
                     </div>
                     {/* Label éditable */}
                     {editingRange?.index === idx ? (
-                      <div className="shift-time-edit" onClick={(e) => e.stopPropagation()}>
+                      <div
+                        className="shift-time-edit"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="text"
                           className="time-input"
                           value={editingRange.arrivee}
-                          onChange={(e) => setEditingRange({ ...editingRange, arrivee: e.target.value })}
+                          onChange={(e) =>
+                            setEditingRange({
+                              ...editingRange,
+                              arrivee: e.target.value,
+                            })
+                          }
                           onKeyDown={handleEditKeyDown}
                           onBlur={handleEditBlur}
                           autoFocus
@@ -629,7 +649,12 @@ const ShiftTimeline: React.FC<ShiftTimelineProps> = ({
                           type="text"
                           className="time-input"
                           value={editingRange.depart}
-                          onChange={(e) => setEditingRange({ ...editingRange, depart: e.target.value })}
+                          onChange={(e) =>
+                            setEditingRange({
+                              ...editingRange,
+                              depart: e.target.value,
+                            })
+                          }
                           onKeyDown={handleEditKeyDown}
                           onBlur={handleEditBlur}
                           placeholder="17h00"
@@ -761,8 +786,9 @@ export const TimelineEditor: React.FC<Props> = ({
   React.useEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
-        // Largeur de la zone de timeline (sans le label)
-        const labelWidth = 100; // Correspond à .shift-timeline-label width
+        // Lire la largeur réelle du label depuis le DOM (s'adapte aux media queries)
+        const labelEl = containerRef.current.querySelector<HTMLElement>(".shift-timeline-label, .chart-label");
+        const labelWidth = labelEl ? labelEl.offsetWidth : 100;
         setContainerWidth(containerRef.current.offsetWidth - labelWidth);
       }
     };

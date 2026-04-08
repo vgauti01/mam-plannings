@@ -87,7 +87,21 @@
   min-width: 44px;
 }
 
-/* Responsive */
+/* Responsive petits écrans desktop */
+@media (max-width: 1100px) {
+  .controls-section {
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .add-form input[type="date"] {
+    min-width: 130px;
+  }
+  .add-form input[type="text"] {
+    min-width: 130px;
+  }
+}
+
+/* Responsive tablet */
 @media (max-width: 900px) {
   .controls-section {
     flex-direction: column;
