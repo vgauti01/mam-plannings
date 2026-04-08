@@ -93,7 +93,9 @@ export const usePlanning = (): UsePlanningReturn => {
     futureRef.current.unshift({ days: days, actionName: "redo" });
 
     try {
-      const restored = await planningService.restorePlanning(previousEntry.days);
+      const restored = await planningService.restorePlanning(
+        previousEntry.days
+      );
       setDays(restored);
       toast.info(`Annulé: ${previousEntry.actionName}`);
     } catch (err) {

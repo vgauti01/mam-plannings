@@ -45,59 +45,59 @@ export const TeamManager = ({ team, onAdd, onUpdate, onDelete }: Props) => {
       ) : (
         <ul className="team-list">
           {team.map((am) => (
-          <li key={am.id} className="team-item">
-            {editingId === am.id ? (
-              // MODE EDITION
-              <div className="edit-row">
-                <input
-                  type="color"
-                  value={editColor}
-                  onChange={(e) => setEditColor(e.target.value)}
-                />
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  autoFocus
-                />
-                <button className="btn-icon save" onClick={handleSaveEdit}>
-                  <LuCheck />
-                </button>
-                <button
-                  className="btn-icon cancel"
-                  onClick={() => setEditingId(null)}
-                >
-                  <LuX />
-                </button>
-              </div>
-            ) : (
-              // MODE AFFICHAGE
-              <>
-                <span
-                  className="color-dot"
-                  style={{ backgroundColor: am.color }}
-                ></span>
-                <span className="am-name">{am.name}</span>
-                <div className="actions">
-                  <button
-                    className="btn-icon"
-                    onClick={() => handleStartEdit(am)}
-                    title="Modifier"
-                  >
-                    <LuUserRoundPen />
+            <li key={am.id} className="team-item">
+              {editingId === am.id ? (
+                // MODE EDITION
+                <div className="edit-row">
+                  <input
+                    type="color"
+                    value={editColor}
+                    onChange={(e) => setEditColor(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    autoFocus
+                  />
+                  <button className="btn-icon save" onClick={handleSaveEdit}>
+                    <LuCheck />
                   </button>
                   <button
-                    className="btn-icon delete"
-                    onClick={() => onDelete(am.id)}
-                    title="Supprimer"
+                    className="btn-icon cancel"
+                    onClick={() => setEditingId(null)}
                   >
-                    <LuTrash2 />
+                    <LuX />
                   </button>
                 </div>
-              </>
-            )}
-          </li>
-        ))}
+              ) : (
+                // MODE AFFICHAGE
+                <>
+                  <span
+                    className="color-dot"
+                    style={{ backgroundColor: am.color }}
+                  ></span>
+                  <span className="am-name">{am.name}</span>
+                  <div className="actions">
+                    <button
+                      className="btn-icon"
+                      onClick={() => handleStartEdit(am)}
+                      title="Modifier"
+                    >
+                      <LuUserRoundPen />
+                    </button>
+                    <button
+                      className="btn-icon delete"
+                      onClick={() => onDelete(am.id)}
+                      title="Supprimer"
+                    >
+                      <LuTrash2 />
+                    </button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
         </ul>
       )}
 

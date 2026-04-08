@@ -77,11 +77,7 @@ export const Modal = ({ isOpen, onClose, children, title }: Props) => {
   if (!isOpen) return null;
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={onClose}
-      role="presentation"
-    >
+    <div className="modal-overlay" onClick={onClose} role="presentation">
       <div
         ref={modalRef}
         className="modal-content"

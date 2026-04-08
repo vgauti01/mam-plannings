@@ -92,7 +92,11 @@ export const MonthlyTable = ({
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
 
-      if (draggedData && draggedData.date === date && draggedData.amId !== amId) {
+      if (
+        draggedData &&
+        draggedData.date === date &&
+        draggedData.amId !== amId
+      ) {
         setDragOverTarget({ date, amId });
       }
     },
