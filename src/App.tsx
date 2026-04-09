@@ -1,20 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { usePlanning } from "./hooks/usePlanning";
 import { MonthlyTable } from "./components/Planning/MonthlyTable";
 import { MonthNavigation } from "./components/MonthNavigation";
 import { DayTable } from "./components/Planning/DayTable";
 import { AddEntryForm } from "./components/Planning/AddEntryForm";
 import { Modal } from "./components/ui/Modal";
-import { Day } from "./types";
 import "./App.css";
-import { TeamManager } from "./components/Team/TeamManager.tsx";
-import { LoadingOverlay } from "./components/ui/LoadingOverlay.tsx";
+import { TeamManager } from "./components/Team/TeamManager";
+import { LoadingOverlay } from "./components/ui/LoadingOverlay";
 import {
   generateMonthlyPdf,
   generateMonthlyExcel,
 } from "./utils/pdfExporter.ts";
 import { useTeam } from "./hooks/useTeam.ts";
-import Header from "./components/Header.tsx";
+import Header from "./components/Header";
+import { UpdateNotification } from "./components/ui/UpdateNotification";
 
 /**
  * Composant principal de l'application MAM Plannings.
@@ -42,18 +42,14 @@ function App() {
 
   // Etat pour la navigation et la sélection
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState<Day | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
 
-  // Synchroniser selectedDay avec days quand days change
-  useEffect(() => {
-    if (selectedDay) {
-      const updatedDay = days.find((d) => d.date === selectedDay.date);
-      if (updatedDay) {
-        setSelectedDay(updatedDay);
-      }
-    }
-  }, [days, selectedDay]);
+  // selectedDay est toujours dérivé de days, donc automatiquement à jour
+  const selectedDay = useMemo(
+    () => days.find((d) => d.date === selectedDate) ?? null,
+    [days, selectedDate]
+  );
 
   // Fonction pour gérer l'export PDF
   const handleExportPdf = () => {
@@ -67,6 +63,8 @@ function App() {
 
   return (
     <div className="container">
+      <UpdateNotification />
+
       {/* Overlay de chargement */}
       <LoadingOverlay
         isLoading={loading}
@@ -105,7 +103,7 @@ function App() {
             days={days}
             team={team}
             currentMonth={currentMonth}
-            onDayClick={(day) => setSelectedDay(day)}
+            onDayClick={(day) => setSelectedDate(day.date)}
             onSwap={handleSwap}
             onShiftChange={handleUpdateShift}
           />
@@ -129,7 +127,7 @@ function App() {
       {/* MODALE DETAILS */}
       <Modal
         isOpen={!!selectedDay}
-        onClose={() => setSelectedDay(null)}
+        onClose={() => setSelectedDate(null)}
         title={selectedDay ? `Détails du ${selectedDay.jour}` : ""}
       >
         {selectedDay && (
@@ -140,7 +138,7 @@ function App() {
             }}
             onDeleteDay={() => {
               void handleRemoveDay(selectedDay.date);
-              setSelectedDay(null);
+              setSelectedDate(null);
             }}
             onUpdateRatio={(ratio) => {
               void handleUpdateRatio(selectedDay.date, ratio);

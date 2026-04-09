@@ -787,7 +787,9 @@ export const TimelineEditor: React.FC<Props> = ({
     const updateWidth = () => {
       if (containerRef.current) {
         // Lire la largeur réelle du label depuis le DOM (s'adapte aux media queries)
-        const labelEl = containerRef.current.querySelector<HTMLElement>(".shift-timeline-label, .chart-label");
+        const labelEl = containerRef.current.querySelector<HTMLElement>(
+          ".shift-timeline-label, .chart-label"
+        );
         const labelWidth = labelEl ? labelEl.offsetWidth : 100;
         setContainerWidth(containerRef.current.offsetWidth - labelWidth);
       }
