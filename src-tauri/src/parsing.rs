@@ -96,7 +96,7 @@ pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[Assistant
                 ParseError::InvalidFormat(format!("Mois invalide: {}", &caps[3]))
             })?;
             // Validation du mois (1-12)
-            if month < 1 || month > 12 {
+            if !(1..=12).contains(&month) {
                 return Err(ParseError::InvalidFormat(format!(
                     "Mois hors limites: {} (doit être entre 1 et 12)", month
                 )));

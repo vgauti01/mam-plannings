@@ -21,8 +21,8 @@ fn compute_slot_durations(segments: &[Segment]) -> Vec<u32> {
         let needed = seg.am_needed as usize;
 
         if needed > active_count {
-            for i in active_count..needed {
-                slot_starts[i] = Some(seg.start);
+            for slot in slot_starts[active_count..needed].iter_mut() {
+                *slot = Some(seg.start);
             }
             active_count = needed;
         } else if needed < active_count {
@@ -160,8 +160,7 @@ pub fn compute_assistant_shifts_balanced(
 
         if needed > active_count {
             // AJOUT : ouvrir les slots depuis active_count jusqu'à needed-1
-            for slot_idx in active_count..needed {
-                let target_id = am_for_slot[slot_idx];
+            for (slot_idx, &target_id) in am_for_slot.iter().enumerate().take(needed).skip(active_count) {
                 if let Some(am) = ams.iter_mut().find(|a| !a.active && a.id == target_id) {
                     am.start = Some(seg.start);
                     am.active = true;
