@@ -1,92 +1,35 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_suffix: _x64-setup.exe
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            artifact_suffix: _amd64.AppImage
-
-    runs-on: ${{ matrix.platform }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
-      - run: npm ci
-
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "MAM Plannings ${{ github.ref_name }}"
-          releaseBody: |
-            ## Changements
-            Voir les commits pour le détail des modifications.
-
-            ## Installation
-            - **Windows** : télécharger le fichier `_x64-setup.exe`
-            - **Linux** : télécharger le fichier `_amd64.AppImage`
-          releaseDraft: true
-          prerelease: false
-
   publish-latest-json:
     name: Publish latest.json
-    needs: build
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Get version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+        run: |
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Download release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download ${{ github.ref_name }} \
+          gh release download ${{ steps.version.outputs.tag }} \
             --pattern "*.sig" \
             --pattern "*.exe" \
             --pattern "*.AppImage" \
@@ -95,7 +38,7 @@ jobs:
       - name: Generate latest.json
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.version.outputs.tag }}
           REPO: ${{ github.repository }}
         run: |
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
@@ -126,4 +69,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ github.ref_name }} latest.json --clobber
+          gh release upload ${{ steps.version.outputs.tag }} latest.json --clobber
