@@ -174,12 +174,11 @@ pub fn compute_assistant_shifts_balanced(
         if needed > active_count {
             // AJOUT : ouvrir les slots inactifs les plus bas en premier
             let mut to_open = needed - active_count;
-            for slot_idx in 0..am_for_slot.len() {
+            for (slot_idx, &target_id) in am_for_slot.iter().enumerate() {
                 if to_open == 0 { break; }
                 if ams.iter().any(|a| a.active && a.slot_index == slot_idx) {
                     continue; // slot déjà occupé
                 }
-                let target_id = am_for_slot[slot_idx];
                 if let Some(am) = ams.iter_mut().find(|a| !a.active && a.id == target_id) {
                     am.start = Some(seg.start);
                     am.active = true;
