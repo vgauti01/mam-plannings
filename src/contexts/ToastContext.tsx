@@ -1,36 +1,6 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  ReactNode,
-} from "react";
+import { useState, useCallback, ReactNode } from "react";
 import { ToastContainer, ToastData, ToastType } from "../components/ui/Toast";
-
-interface ToastContextType {
-  /** Affiche un toast de succès */
-  success: (message: string) => void;
-  /** Affiche un toast d'erreur */
-  error: (message: string) => void;
-  /** Affiche un toast d'information */
-  info: (message: string) => void;
-  /** Affiche un toast d'avertissement */
-  warning: (message: string) => void;
-}
-
-const ToastContext = createContext<ToastContextType | null>(null);
-
-/**
- * Hook pour utiliser le système de toast
- * @throws {Error} Si utilisé en dehors du ToastProvider
- */
-export const useToast = (): ToastContextType => {
-  const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error("useToast doit être utilisé dans un ToastProvider");
-  }
-  return context;
-};
+import { ToastContext } from "./toastContextInstance";
 
 interface ToastProviderProps {
   children: ReactNode;

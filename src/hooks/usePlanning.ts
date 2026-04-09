@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Day, TimeRange } from "../types";
 import { planningService } from "../services/planningService";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useToast } from "../contexts/ToastContext";
+import { useToast } from "./useToast";
 import { useUndoRedoKeyboard } from "./useHistory";
 
 const MAX_HISTORY_SIZE = 30;
@@ -98,7 +98,7 @@ export const usePlanning = (): UsePlanningReturn => {
       );
       setDays(restored);
       toast.info(`Annulé: ${previousEntry.actionName}`);
-    } catch (err) {
+    } catch {
       // En cas d'erreur, on remet l'entrée dans l'historique
       historyRef.current.push(previousEntry);
       futureRef.current.shift();
@@ -119,7 +119,7 @@ export const usePlanning = (): UsePlanningReturn => {
       const restored = await planningService.restorePlanning(nextEntry.days);
       setDays(restored);
       toast.info("Action rétablie");
-    } catch (err) {
+    } catch {
       // En cas d'erreur, on remet l'entrée dans le futur
       futureRef.current.unshift(nextEntry);
       historyRef.current.pop();

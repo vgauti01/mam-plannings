@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { AssistantProfile } from "../types";
 import { planningService } from "../services/planningService";
-import { useToast } from "../contexts/ToastContext";
+import { useToast } from "./useToast";
 
 /**
  * Type de retour du hook useTeam.
