@@ -38,14 +38,8 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// Parse un fichier PDF de planning et retourne une liste de jours avec les enfants et leurs horaires.
-/// # Arguments
-/// * `path` - Chemin vers le fichier PDF.
-/// * `year` - Année à utiliser pour les dates.
-/// # Returns
-/// * `Result<Vec<Day>, ParseError>` - Liste des jours ou une erreur descriptive en cas d'échec.
-pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[AssistantProfile]) -> Result<Vec<Day>, ParseError> {
-    // Lire le fichier PDF
+/// Extrait le texte d'un PDF via pdf-extract.
+fn extract_pdf_text(path: &str) -> Result<String, ParseError> {
     let bytes = std::fs::read(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             ParseError::FileNotFound(path.to_string())
@@ -53,14 +47,51 @@ pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[Assistant
             ParseError::FileNotFound(format!("{}: {}", path, e))
         }
     })?;
+    pdf_extract::extract_text_from_mem(&bytes)
+        .map_err(|e| ParseError::InvalidPdf(e.to_string()))
+}
 
-    // Extraire le texte du PDF
-    let parsed_text = pdf_extract::extract_text_from_mem(&bytes)
-        .map_err(|e| ParseError::InvalidPdf(e.to_string()))?;
+/// Extrait uniquement les dates présentes dans un PDF de planning, sans parser les enfants.
+/// Beaucoup plus rapide que `parse_planning` pour une simple vérification de conflits.
+pub fn extract_dates_from_pdf(path: &str, year: i32) -> Result<Vec<String>, ParseError> {
+    let text = extract_pdf_text(path)?;
+    let day_re = Regex::new(r"(LUN\.|MAR\.|MER\.|JEU\.|VEN\.)\s*(\d{1,2})/(\d{2})")
+        .map_err(|e| ParseError::InvalidFormat(format!("Erreur regex interne: {}", e)))?;
+
+    let dates: Vec<String> = day_re
+        .captures_iter(&text)
+        .filter_map(|caps| {
+            let day: u32 = caps[2].parse().ok()?;
+            let month: u32 = caps[3].parse().ok()?;
+            if (1..=12).contains(&month) {
+                Some(format!("{}-{:02}-{:02}", year, month, day))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if dates.is_empty() {
+        return Err(ParseError::NoDaysFound);
+    }
+    Ok(dates)
+}
+
+/// Parse un fichier PDF de planning et retourne une liste de jours avec les enfants et leurs horaires.
+/// # Arguments
+/// * `path` - Chemin vers le fichier PDF.
+/// * `year` - Année à utiliser pour les dates.
+/// # Returns
+/// * `Result<Vec<Day>, ParseError>` - Liste des jours ou une erreur descriptive en cas d'échec.
+pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[AssistantProfile]) -> Result<Vec<Day>, ParseError> {
+    let parsed_text = extract_pdf_text(path)?;
 
     // Regex pour détecter les lignes de jour (ex: "LUN. 7/01")
     let day_re = Regex::new(r"(LUN\.|MAR\.|MER\.|JEU\.|VEN\.)\s*(\d{1,2})/(\d{2})")
         .map_err(|e| ParseError::InvalidFormat(format!("Erreur regex interne: {}", e)))?;
+
+    // Regexes de process_day compilées une seule fois pour tous les jours
+    let re = DayRegexes::new().map_err(|e| ParseError::InvalidFormat(format!("Erreur regex interne: {}", e)))?;
 
     // Vecteur pour stocker les jours extraits
     let mut days: Vec<Day> = Vec::new();
@@ -83,7 +114,7 @@ pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[Assistant
                 let date = format!("{}-{:02}-{:02}", year, month, d_num);
                 let jour = map_day_name(abbr);
 
-                if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team) {
+                if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team, &re) {
                     days.push(day);
                 }
             }
@@ -115,7 +146,7 @@ pub fn parse_planning(path: &str, year: i32, ratio: u8, active_team: &[Assistant
         let date = format!("{}-{:02}-{:02}", year, month, d_num);
         let jour = map_day_name(abbr);
 
-        if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team) {
+        if let Some(day) = process_day(&date, &jour, &current_lines, ratio, active_team, &re) {
             days.push(day);
         }
     }
@@ -145,6 +176,23 @@ fn map_day_name(abbr: &str) -> String {
     }
 }
 
+/// Regexes compilées une seule fois et partagées entre tous les appels de process_day.
+struct DayRegexes {
+    global_hours: Regex,
+    child_start: Regex,
+    time_range: Regex,
+}
+
+impl DayRegexes {
+    fn new() -> Result<Self, regex::Error> {
+        Ok(Self {
+            global_hours: Regex::new(r"^\s*\d{1,2}h\d{2}\s*-\s*\d{1,2}h\d{2}.*$")?,
+            child_start: Regex::new(r"^\p{Lu}[\p{L}\-]+(?:\s+\p{Lu}[\p{L}\-]+)?\s+\p{Lu}\.")?,
+            time_range: Regex::new(r"(\d{1,2})h(\d{2})\s*-\s*(\d{1,2})h(\d{2})")?,
+        })
+    }
+}
+
 /// Traite les lignes d'un jour pour extraire les enfants et leurs horaires.
 /// # Arguments
 /// * `date` - Date du jour.
@@ -152,20 +200,14 @@ fn map_day_name(abbr: &str) -> String {
 /// * `lines` - Lignes associées au jour.
 /// # Returns
 /// * `Option<Day>` - Jour traité ou None s'il n'y a pas d'enfants.
-fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team: &[AssistantProfile]) -> Option<Day> {
-    // Lignes du style "7h30 - 18h30 (11h)" -> à ignorer
-    let global_hours_re =
-        Regex::new(r"^\s*\d{1,2}h\d{2}\s*-\s*\d{1,2}h\d{2}.*$").ok()?;
-
-    // Début d'une ligne enfant, ex: "Anna H. M.F. 8h00 - 8h30/16h30 - 18h00"
-    // \p{Lu} = majuscule Unicode, \p{L} = lettre Unicode (couvre ô, î, ë, etc.)
-    let child_start_re = Regex::new(
-        r"^\p{Lu}[\p{L}\-]+(?:\s+\p{Lu}[\p{L}\-]+)?\s+\p{Lu}\.",
-    ).ok()?;
-
-    // "8h00 - 8h30" ou "16h30 - 18h00" etc.
-    let time_range_re =
-        Regex::new(r"(\d{1,2})h(\d{2})\s*-\s*(\d{1,2})h(\d{2})").ok()?;
+fn process_day(
+    date: &str,
+    jour: &str,
+    lines: &[String],
+    ratio: u8,
+    active_team: &[AssistantProfile],
+    re: &DayRegexes,
+) -> Option<Day> {
 
     // Fusionner les lignes enfants qui sont sur plusieurs lignes
     let mut merged_child_lines: Vec<String> = Vec::new();
@@ -176,10 +218,10 @@ fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team:
     for line in lines {
         let l = line.trim();
         // Si la ligne est vide ou une ligne d'horaires globales (ex: "7h30 - 18h30"), on l'ignore
-        if l.is_empty() || global_hours_re.is_match(l) { continue; }
+        if l.is_empty() || re.global_hours.is_match(l) { continue; }
 
         // Si la ligne commence une nouvelle entrée enfant (ex: "Anna H. ...")
-        if child_start_re.is_match(l) {
+        if re.child_start.is_match(l) {
             // Sauvegarder la ligne en cours si elle existe
             if let Some(existing) = current_line.take() { merged_child_lines.push(existing); }
             // Démarrer une nouvelle ligne enfant
@@ -196,7 +238,7 @@ fn process_day(date: &str, jour: &str, lines: &[String], ratio: u8, active_team:
     // Analyser les lignes enfants fusionnées pour extraire les noms et horaires
     let mut children_map: HashMap<String, Vec<TimeRange>> = HashMap::new();
     for raw in merged_child_lines {
-        if let Some((nom, ranges)) = parse_child_line(&raw, &time_range_re) {
+        if let Some((nom, ranges)) = parse_child_line(&raw, &re.time_range) {
             let entry = children_map.entry(nom).or_default();
             entry.extend(ranges);
         }

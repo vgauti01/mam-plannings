@@ -32,6 +32,7 @@ pub fn run() {
             remove_child,
             remove_day,
             import_planning_pdf,
+            preview_import_pdf,
             swap_shifts,
             edit_assistant_shift,
             update_day_ratio,

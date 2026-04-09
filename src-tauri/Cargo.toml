@@ -31,3 +31,7 @@ state = "0.6.0"
 chrono = "0.4"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+# Optimise les dépendances en mode dev pour éviter les lenteurs (ex: pdf-extract)
+[profile.dev.package."*"]
+opt-level = 3

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Day, TimeRange } from "../types";
 import { planningService } from "../services/planningService";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { useToast } from "./useToast";
 import { useUndoRedoKeyboard } from "./useHistory";
 
@@ -174,9 +174,32 @@ export const usePlanning = (): UsePlanningReturn => {
 
       // Si l'utilisateur a sélectionné un fichier
       if (file) {
-        // 2. DÉBUT DU CHARGEMENT
+        // 2. DÉBUT DU CHARGEMENT (dès la sélection du fichier)
         setLoading(true);
         setError(null);
+
+        // Prévisualiser les dates du PDF et détecter les conflits
+        const pdfDates = await planningService.previewImportDates(file, year);
+        const existingDates = new Set(days.map((d) => d.date));
+        const conflictDates = pdfDates.filter((d) => existingDates.has(d));
+
+        if (conflictDates.length > 0) {
+          setLoading(false);
+          const dateList = conflictDates
+            .map((d) =>
+              new Date(d).toLocaleDateString("fr-FR", {
+                day: "numeric",
+                month: "long",
+              })
+            )
+            .join(", ");
+          const confirmed = await confirm(
+            `Les jours suivants seront écrasés par l'import :\n\n${dateList}\n\nContinuer ?`,
+            { title: "Données existantes détectées", kind: "warning" }
+          );
+          if (!confirmed) return;
+          setLoading(true);
+        }
 
         // Sauvegarder l'état actuel pour undo
         saveToHistory(days, "Import PDF");

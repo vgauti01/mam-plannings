@@ -3,7 +3,7 @@ use tauri::Manager;
 use crate::models::{AssistantProfile, AssistantShift, Child, Day, TimeRange};
 use crate::state::AppState;
 use crate::algorithm::compute_assistant_shifts_balanced;
-use crate::parsing::parse_planning;
+use crate::parsing::{parse_planning, extract_dates_from_pdf};
 use crate::utils::{to_minutes_from_midnight, date_to_weekday_french};
 
 // --- GESTION PLANNING ---
@@ -228,6 +228,20 @@ pub async fn import_planning_pdf(
     }).await;
 
     result.unwrap_or_else(|e| Err(format!("Erreur lors de l'importation: {:?}", e)))
+}
+
+/// Prévisualise les dates contenues dans un PDF sans sauvegarder
+/// Retourne la liste des dates (YYYY-MM-DD) trouvées dans le fichier
+#[tauri::command]
+pub async fn preview_import_pdf(
+    path: String,
+    year: i32,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        extract_dates_from_pdf(&path, year).map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Erreur de prévisualisation: {:?}", e)))
 }
 
 // --- GESTION DE L'ANNUAIRE (LIBRARY) ---

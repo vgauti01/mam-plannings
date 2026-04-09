@@ -16,6 +16,10 @@ export const planningService = {
     return await invoke("restore_planning", { days });
   },
 
+  async previewImportDates(path: string, year: number): Promise<string[]> {
+    return await invoke("preview_import_pdf", { path, year });
+  },
+
   async importPdf(
     path: string,
     year: number,

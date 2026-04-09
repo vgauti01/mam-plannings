@@ -125,10 +125,3 @@ NO_STRIP=true npm run tauri build
 Développé avec passion pour simplifier la vie des MAMs.
 
 * **Victor Gautier**
-
-## TODO:
-- [x] Modifier l'export XLSX pour avoir un tableau dynamique et modifiable facilement
-- [x] Permettre de déplacer des créneaux horaires entre les AM dans la vue graphique
-- [x] Notifier sur la premère case du jour (date) lorsqu'il y a un manque d'AM durant la journée
-- [x] Déplacer l'ajout manuel d'enfant dans la modale de modification du jour (avec liste et ratio), attention: si un enfant de même nom, lui ajouter la plage horaire
-- [x] Mettre dans les Shift cells toutes les plages horaires de l'AM (et pas seulement l'heure d'arrivée jusqu'à l'heure de départ)
