@@ -9,37 +9,50 @@ struct Segment {
 }
 
 /// Calcule la durée totale de chaque position de slot sur la journée.
-/// La position 0 est la plus stable (active le plus longtemps), les positions hautes
-/// sont les postes rotatifs (fermés en premier via LIFO, rouverts en premier).
+/// La fermeture suit une logique FIFO : le slot ouvert le plus tôt est fermé en premier.
+/// En cas d'égalité d'heure d'ouverture, le slot d'indice le plus bas est fermé en premier
+/// (ce slot est attribué à l'AM avec le plus d'heures accumulées, qui part donc en priorité).
+/// Le slot d'indice le plus haut est le plus stable (ouvert en dernier, fermé en dernier).
 fn compute_slot_durations(segments: &[Segment]) -> Vec<u32> {
     let max_slots = segments.iter().map(|s| s.am_needed as usize).max().unwrap_or(0);
     let mut durations = vec![0u32; max_slots];
     let mut slot_starts: Vec<Option<u16>> = vec![None; max_slots];
-    let mut active_count: usize = 0;
 
     for seg in segments {
         let needed = seg.am_needed as usize;
+        let active_count = slot_starts.iter().filter(|s| s.is_some()).count();
 
         if needed > active_count {
-            for slot in slot_starts[active_count..needed].iter_mut() {
-                *slot = Some(seg.start);
-            }
-            active_count = needed;
-        } else if needed < active_count {
-            for i in needed..active_count {
-                if let Some(s) = slot_starts[i] {
-                    durations[i] += (seg.start - s) as u32;
-                    slot_starts[i] = None;
+            // Ouvrir les slots inactifs les plus bas en premier
+            let mut to_open = needed - active_count;
+            for slot in slot_starts.iter_mut() {
+                if to_open == 0 { break; }
+                if slot.is_none() {
+                    *slot = Some(seg.start);
+                    to_open -= 1;
                 }
             }
-            active_count = needed;
+        } else if needed < active_count {
+            // FIFO : fermer les slots avec l'heure de début la plus ancienne
+            // À égalité, fermer l'indice le plus bas en premier
+            let to_close = active_count - needed;
+            let mut active_slots: Vec<(u16, usize)> = slot_starts.iter()
+                .enumerate()
+                .filter_map(|(i, s)| s.map(|start| (start, i)))
+                .collect();
+            active_slots.sort(); // tri par start asc, puis index asc (ordre naturel du tuple)
+
+            for &(start, idx) in active_slots.iter().take(to_close) {
+                durations[idx] += (seg.start - start) as u32;
+                slot_starts[idx] = None;
+            }
         }
     }
 
     if let Some(last) = segments.last() {
-        for i in 0..active_count {
-            if let Some(s) = slot_starts[i] {
-                durations[i] += (last.end - s) as u32;
+        for (i, s) in slot_starts.iter().enumerate() {
+            if let Some(start) = s {
+                durations[i] += (last.end - start) as u32;
             }
         }
     }
@@ -159,17 +172,38 @@ pub fn compute_assistant_shifts_balanced(
         let active_count = ams.iter().filter(|a| a.active).count();
 
         if needed > active_count {
-            // AJOUT : ouvrir les slots depuis active_count jusqu'à needed-1
-            for (slot_idx, &target_id) in am_for_slot.iter().enumerate().take(needed).skip(active_count) {
+            // AJOUT : ouvrir les slots inactifs les plus bas en premier
+            let mut to_open = needed - active_count;
+            for slot_idx in 0..am_for_slot.len() {
+                if to_open == 0 { break; }
+                if ams.iter().any(|a| a.active && a.slot_index == slot_idx) {
+                    continue; // slot déjà occupé
+                }
+                let target_id = am_for_slot[slot_idx];
                 if let Some(am) = ams.iter_mut().find(|a| !a.active && a.id == target_id) {
                     am.start = Some(seg.start);
                     am.active = true;
                     am.slot_index = slot_idx;
+                    to_open -= 1;
                 }
             }
         } else if needed < active_count {
-            // RETRAIT LIFO : fermer les slots depuis active_count-1 jusqu'à needed
-            for slot_idx in (needed..active_count).rev() {
+            // RETRAIT FIFO : fermer les AMs actifs les plus anciens en premier
+            // À égalité d'heure d'embauche, fermer le slot_index le plus bas
+            // (le slot bas correspond à l'AM avec le plus d'heures accumulées)
+            let to_close = active_count - needed;
+            let mut active_ams: Vec<(u16, usize)> = ams.iter()
+                .filter(|a| a.active)
+                .map(|a| (a.start.unwrap_or(0), a.slot_index))
+                .collect();
+            active_ams.sort(); // tri par start asc, puis slot_index asc
+
+            let slots_to_close: Vec<usize> = active_ams.iter()
+                .take(to_close)
+                .map(|&(_, slot_idx)| slot_idx)
+                .collect();
+
+            for slot_idx in slots_to_close {
                 if let Some(am) = ams.iter_mut().find(|a| a.active && a.slot_index == slot_idx) {
                     if let Some(s) = am.start {
                         push_time_range(&mut result, am.id, TimeRange { arrivee: s, depart: seg.start });
@@ -411,10 +445,10 @@ mod tests {
 
     #[test]
     fn test_fifo_rotation_debauche_reembauche() {
-        // Scénario FIFO : l'AM qui débauche en premier doit réembaucher en premier
-        // Matin 8h-12h : 2 AM (slot0=AM1, slot1=AM2)
-        // Midi 12h-14h : 1 AM (AM2 débauche en premier = LIFO ferme slot1)
-        // AprèsMidi 14h-17h : 2 AM (AM2 réembauche en premier)
+        // Scénario FIFO : l'AM qui embauche en premier débauche en premier
+        // Matin 8h-12h : 2 AM (slot0=AM2 rotative, slot1=AM1 stable)
+        // Midi 12h-14h : 1 AM (AM2 débauche en premier = FIFO ferme slot0, le plus ancien à égalité)
+        // AprèsMidi 14h-17h : 2 AM (AM2 réembauche en premier via slot0)
         let enfants = vec![
             create_child("Alice", 480, 1020),   // 8h - 17h
             create_child("Bob", 480, 1020),
@@ -491,6 +525,65 @@ mod tests {
             .filter(|s| !s.heures.is_empty())
             .count();
         assert!(total_am_with_hours <= 2);
+    }
+
+    #[test]
+    fn test_fifo_premier_embauche_premier_debauche() {
+        // Scénario FIFO strict : une AM embauche seule à 8h, une autre la rejoint à 10h (5e enfant)
+        // À 14h on repasse à 4 enfants → l'AM embauchée la première (8h) doit débaucher en premier
+        let enfants = vec![
+            create_child("Alice", 480, 1020), // 8h - 17h
+            create_child("Bob", 480, 1020),
+            create_child("Charlie", 480, 1020),
+            create_child("David", 480, 1020),
+            create_child("Eve", 600, 840),    // 10h - 14h (5e enfant → 2e AM)
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+        let result = compute_assistant_shifts(&enfants, 4, &ams);
+
+        // On vérifie la propriété temporelle : l'AM qui commence à 8h débauche à 14h (FIFO)
+        let am_8h = result.iter()
+            .find(|s| s.heures.iter().any(|h| h.arrivee == 480))
+            .expect("Une AM doit commencer à 8h");
+        assert_eq!(am_8h.heures.len(), 1, "L'AM démarrant à 8h n'a qu'une plage (8h-14h)");
+        assert_eq!(am_8h.heures[0].depart, 840, "L'AM embauchée à 8h débauche à 14h (premier embauché = premier débauché)");
+
+        // L'AM qui commence à 10h reste jusqu'à 17h
+        let am_10h = result.iter()
+            .find(|s| s.heures.iter().any(|h| h.arrivee == 600))
+            .expect("Une AM doit commencer à 10h");
+        assert_eq!(am_10h.heures.len(), 1, "L'AM démarrant à 10h n'a qu'une plage (10h-17h)");
+        assert_eq!(am_10h.heures[0].depart, 1020, "L'AM embauchée à 10h débauche à 17h");
+
+        // Les deux AM sont bien distinctes
+        assert_ne!(am_8h.am_id, am_10h.am_id);
+    }
+
+    #[test]
+    fn test_fifo_tiebreak_par_heures_accumulees() {
+        // Tie-break : deux AM embauchent à 8h simultanément.
+        // AM1 a plus d'heures accumulées → AM1 doit débaucher en premier.
+        let enfants = vec![
+            create_child("Alice", 480, 1020), // 8h - 17h
+            create_child("Bob", 480, 1020),
+            create_child("Charlie", 480, 1020),
+            create_child("David", 480, 1020),
+            create_child("Eve", 480, 720),    // 8h - 12h (5e enfant le matin → 2 AM simultanées)
+        ];
+        let ams = vec![create_am(0, "AM1"), create_am(1, "AM2")];
+
+        let mut accumulated: HashMap<u8, u32> = HashMap::new();
+        accumulated.insert(0, 600); // AM1 : 10h accumulées
+        accumulated.insert(1, 100); // AM2 : 1h40 accumulées
+
+        let result = compute_assistant_shifts_balanced(&enfants, 4, &ams, &accumulated);
+
+        // À 12h on repasse à 1 AM : AM1 (plus d'heures accumulées) doit débaucher en premier
+        let am1 = result.iter().find(|s| s.am_id == 0).expect("AM1 doit avoir des shifts");
+        let am2 = result.iter().find(|s| s.am_id == 1).expect("AM2 doit avoir des shifts");
+
+        assert_eq!(am1.heures[0].depart, 720, "AM1 (plus d'heures accumulées) débauche à 12h");
+        assert_eq!(am2.heures[0].depart, 1020, "AM2 (moins d'heures accumulées) reste jusqu'à 17h");
     }
 
     #[test]
