@@ -14,6 +14,11 @@ pub fn run() {
     let app_state = AppState::new(); // Initialisation de l'état de l'application
 
     tauri::Builder::default()
+        .setup(|app| {
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle().plugin(tauri_plugin_process::init())?;
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
